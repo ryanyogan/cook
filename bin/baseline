@@ -1,0 +1,180 @@
+#!/usr/bin/env bash
+# Cold baseline for the sample app: what a CI job does before and during the
+# e2e suite, timed phase by phase, on a fresh export of the committed tree.
+#
+#   bin/baseline [RUNS]        # default 1 run; writes bench/baseline.json
+#
+# Each run exports fixtures/sample_app from HEAD into a new temp dir (no
+# _build, deps or node_modules), uses its own database, and cleans both up.
+#
+# What this does NOT include: VM provisioning, queueing, a network checkout,
+# and cold download caches (Hex, npm and Playwright browsers are served from
+# this machine's caches). Real CI is slower than the number recorded here.
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+RUNS="${1:-1}"
+OUT="${BASELINE_OUT:-$ROOT/bench/baseline.json}"
+APP_REL="fixtures/sample_app"
+PGHOST_="${PGHOST:-127.0.0.1}"
+PGPORT_="${PGPORT:-5544}"
+
+case "$RUNS" in
+  '' | *[!0-9]* | 0) echo "usage: bin/baseline [RUNS]" >&2; exit 64 ;;
+esac
+
+for tool in git mix npm npx jq psql tar; do
+  command -v "$tool" >/dev/null || { echo "bin/baseline: $tool not found" >&2; exit 2; }
+done
+
+if ! git -C "$ROOT" rev-parse --verify -q HEAD >/dev/null; then
+  echo "bin/baseline: no commit to export; commit the tree first" >&2
+  exit 2
+fi
+
+now_ms() { echo $(($(date +%s%N) / 1000000)); }
+
+WORK=""
+DB=""
+cleanup() {
+  if [ -n "$DB" ]; then
+    PGPASSWORD=postgres psql -h "$PGHOST_" -p "$PGPORT_" -U postgres -q \
+      -c "DROP DATABASE IF EXISTS \"$DB\" WITH (FORCE)" >/dev/null 2>&1 || true
+  fi
+  if [ -n "$WORK" ] && [ -d "$WORK" ]; then rm -rf "$WORK"; fi
+}
+trap cleanup EXIT
+
+# phase NAME CMD... : runs CMD in the app dir, appends "NAME MS EXIT" to $PHASES.
+phase() {
+  local name="$1" start end code=0
+  shift
+  start=$(now_ms)
+  (cd "$APP" && "$@") >>"$LOG" 2>&1 || code=$?
+  end=$(now_ms)
+  echo "$name $((end - start)) $code" >>"$PHASES"
+  printf '  %-16s %7d ms%s\n' "$name" "$((end - start))" "$([ "$code" = 0 ] || echo "  (exit $code)")" >&2
+  return 0
+}
+
+run_once() {
+  local n="$1"
+  WORK="$(mktemp -d "${TMPDIR:-/tmp}/cook-baseline.XXXXXX")"
+  APP="$WORK/src/$APP_REL"
+  LOG="$WORK/baseline.log"
+  PHASES="$WORK/phases"
+  DB="sample_app_test_baseline_$$_$n"
+  : >"$PHASES"
+
+  export MIX_ENV=test
+  export MIX_TEST_PARTITION="_baseline_$$_$n" # database sample_app_test_baseline_<pid>_<n>
+  unset PLAYWRIGHT_WS_ENDPOINT PORT
+
+  echo "run $n/$RUNS in $WORK" >&2
+  local t0 start code=0
+  t0=$(now_ms)
+
+  mkdir -p "$WORK/src"
+  start=$(now_ms)
+  git -C "$ROOT" archive HEAD "$APP_REL" | tar -x -C "$WORK/src" || code=$?
+  echo "checkout $(($(now_ms) - start)) $code" >>"$PHASES"
+
+  phase deps_fetch mix deps.get
+  phase npm_install npm ci --prefix assets --no-audit --no-fund
+  phase browser_install npx --prefix assets playwright install chromium
+  phase compile mix compile
+  phase assets_build mix do assets.setup + assets.build
+  phase db_setup mix do ecto.create --quiet + ecto.migrate --quiet
+  phase test mix test test/features
+
+  local total=$(($(now_ms) - t0))
+  # ExUnit prints "Result: 44 passed" or "Result: 43/44 passed" (Elixir >= 1.20),
+  # older versions print "44 tests, 1 failure".
+  local summary tests="" failures=""
+  summary="$(grep -E '^Result: [0-9]+(/[0-9]+)? passed|^[0-9]+ tests?, [0-9]+ failures?' "$LOG" | tail -n 1 || true)"
+  if [[ "$summary" =~ ^Result:\ ([0-9]+)/([0-9]+)\ passed ]]; then
+    tests="${BASH_REMATCH[2]}"
+    failures=$((BASH_REMATCH[2] - BASH_REMATCH[1]))
+  elif [[ "$summary" =~ ^Result:\ ([0-9]+)\ passed ]]; then
+    tests="${BASH_REMATCH[1]}"
+    failures=0
+  elif [[ "$summary" =~ ^([0-9]+)\ tests?,\ ([0-9]+)\ failures? ]]; then
+    tests="${BASH_REMATCH[1]}"
+    failures="${BASH_REMATCH[2]}"
+  fi
+
+  jq -n --rawfile phases "$PHASES" --argjson total "$total" --argjson n "$n" \
+    --arg tests "${tests:-}" --arg failures "${failures:-}" '
+    ($phases | split("\n") | map(select(length > 0) | split(" "))) as $rows
+    | ($rows | map(select(.[0] == "test")) | .[0][2] | tonumber) as $test_exit
+    | {
+        run: $n,
+        total_ms: $total,
+        phases_ms: ($rows | map({key: .[0], value: (.[1] | tonumber)}) | from_entries),
+        failed_phases: ($rows | map(select(.[2] != "0" and .[0] != "test") | .[0])),
+        tests: (if $tests == "" then null else ($tests | tonumber) end),
+        failures: (if $failures == "" then null else ($failures | tonumber) end),
+        test_exit_code: $test_exit,
+        test_status: (if $test_exit == 0 then "pass" else "fail" end)
+      }' >>"$RESULTS"
+
+  if [ -z "$summary" ]; then
+    echo "bin/baseline: no test summary found; last lines of the log:" >&2
+    tail -n 25 "$LOG" >&2
+    BROKEN=1
+  fi
+  printf '  %-16s %7d ms  (%s)\n' total "$total" "${summary:-no test summary}" >&2
+
+  cleanup
+  WORK=""
+  DB=""
+}
+
+RESULTS="$(mktemp "${TMPDIR:-/tmp}/cook-baseline-results.XXXXXX")"
+BROKEN=0
+for n in $(seq 1 "$RUNS"); do run_once "$n"; done
+
+if [ "$BROKEN" = 1 ] || [ "$(jq -s 'map(.failed_phases | length) | add' "$RESULTS")" != 0 ]; then
+  echo "bin/baseline: a setup phase failed or the suite printed no result; not writing $OUT" >&2
+  jq -c '{run, failed_phases}' "$RESULTS" >&2
+  rm -f "$RESULTS"
+  exit 2
+fi
+
+mkdir -p "$(dirname "$OUT")"
+jq -s \
+  --arg recorded_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  --arg commit "$(git -C "$ROOT" rev-parse --short HEAD)" \
+  --arg elixir "$(elixir --short-version)" \
+  --arg otp "$(erl -noshell -eval 'io:put_chars(erlang:system_info(otp_release)), halt().')" \
+  --arg node "$(node --version)" \
+  --arg os "$(uname -sr)" \
+  --arg cpu "$(awk -F': ' '/model name/ {print $2; exit}' /proc/cpuinfo 2>/dev/null || true)" \
+  --argjson cores "$(getconf _NPROCESSORS_ONLN)" \
+  --argjson memory_mb "$(awk '/MemTotal/ {print int($2 / 1024)}' /proc/meminfo 2>/dev/null || echo null)" '
+  def median: sort | if length % 2 == 1 then .[(length - 1) / 2]
+                     else ((.[length / 2 - 1] + .[length / 2]) / 2 | round) end;
+  . as $runs
+  | {
+    schema: "cook.baseline/1",
+    recorded_at: $recorded_at,
+    commit: $commit,
+    app: "fixtures/sample_app",
+    command: "mix test test/features",
+    runs_count: length,
+    total_ms: (map(.total_ms) | median),
+    phases_ms: (.[0].phases_ms | keys_unsorted | map(. as $k | {key: $k, value: ($runs | map(.phases_ms[$k]) | median)}) | from_entries),
+    tests: .[0].tests,
+    aggregate: "median over runs, per phase and for the total (so the phase medians need not sum to total_ms)",
+    machine: {cores: $cores, memory_mb: $memory_mb, cpu: $cpu, os: $os, elixir: $elixir, otp: $otp, node: $node},
+    caveats: [
+      "Hex, npm and Playwright browser download caches were warm: nothing large was downloaded.",
+      "No VM provisioning, no queue time and no checkout over the network (git archive from a local repo).",
+      "Real CI is slower than this; treat total_ms as a lower bound for a cold run."
+    ],
+    runs: .
+  }' "$RESULTS" >"$OUT.tmp"
+mv "$OUT.tmp" "$OUT"
+rm -f "$RESULTS"
+
+jq -r '"baseline: total \(.total_ms) ms (median of \(.runs_count)), \(.tests) tests -> " + input_filename' "$OUT" >&2

@@ -1,0 +1,167 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Keep in step with the versions used for development (see README).
+  ELIXIR_VERSION: "1.20.4"
+  OTP_VERSION: "29"
+  NODE_VERSION: "24"
+
+jobs:
+  # Cook's own tests: unit tests only. No browser, no sample app boot.
+  unit:
+    runs-on: ubuntu-24.04
+    env:
+      MIX_ENV: test
+    services:
+      db:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5544:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: erlef/setup-beam@v1
+        with:
+          elixir-version: ${{ env.ELIXIR_VERSION }}
+          otp-version: ${{ env.OTP_VERSION }}
+      - uses: actions/cache@v4
+        with:
+          path: |
+            deps
+            _build
+          key: unit-${{ runner.os }}-${{ env.ELIXIR_VERSION }}-${{ env.OTP_VERSION }}-${{ hashFiles('mix.lock') }}
+      - run: mix deps.get
+      - run: mix compile --warnings-as-errors
+      - run: mix format --check-formatted
+      - run: mix test
+
+  # Cook driving real browsers against the sample app. This is the only place
+  # where Cook itself is checked end to end; it never runs in local `mix test`.
+  e2e:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    services:
+      db:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5544:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: erlef/setup-beam@v1
+        with:
+          elixir-version: ${{ env.ELIXIR_VERSION }}
+          otp-version: ${{ env.OTP_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - uses: actions/cache@v4
+        with:
+          path: |
+            deps
+            _build
+            fixtures/sample_app/deps
+            fixtures/sample_app/_build
+          key: e2e-${{ runner.os }}-${{ env.ELIXIR_VERSION }}-${{ env.OTP_VERSION }}-${{ hashFiles('mix.lock', 'fixtures/sample_app/mix.lock') }}
+
+      - name: Cook deps and compile
+        run: |
+          mix deps.get
+          mix compile
+
+      - name: Sample app deps, compile and assets
+        working-directory: fixtures/sample_app
+        env:
+          MIX_ENV: test
+        run: |
+          mix deps.get
+          npm ci --prefix assets
+          mix compile
+          mix do assets.setup + assets.build
+
+      - name: Playwright for the browser server (with system deps)
+        working-directory: priv/playwright
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
+      - name: Playwright for the sample app
+        working-directory: fixtures/sample_app/assets
+        run: npx playwright install --with-deps chromium
+
+      - name: Start the daemon
+        run: bin/cook start --detach
+
+      - name: Warm run of the sample suite
+        run: |
+          code=0
+          bin/cook run --json > verdict.json || code=$?
+          jq '{schema, status, selected, counts, duration_ms, timing, error}' verdict.json
+          expected=$(grep -rhE '^\s+(test|feature) "' fixtures/sample_app/test/features | wc -l)
+          echo "exit code $code, expecting $expected tests"
+          # The suite has one deliberately flaky test, so fail is acceptable; error is not.
+          test "$code" = 0 || test "$code" = 1
+          jq -e '.schema == "cook.verdict/1"' verdict.json
+          jq -e '.status == "pass" or .status == "fail"' verdict.json
+          jq -e --argjson n "$expected" '.selected == $n' verdict.json
+
+      - name: Kill the browser server mid-run, expect an error verdict
+        run: |
+          code=0
+          bin/cook run --json > killed.json &
+          run_pid=$!
+          sleep 1.5
+          # The node process, not the wrapper shell that started it.
+          kill -9 "$(pgrep -f '^[^ ]*node .*[r]un-server' | head -n 1)"
+          wait "$run_pid" || code=$?
+          jq '{status, error}' killed.json
+          test "$code" = 2
+          jq -e '.status == "error" and .error.reason == "browser_server_down"' killed.json
+
+      - name: The pool recovers for the next run
+        run: |
+          code=0
+          bin/cook run --json > recovered.json || code=$?
+          jq '{status, selected, timing, error}' recovered.json
+          test "$code" = 0 || test "$code" = 1
+          jq -e '.status == "pass" or .status == "fail"' recovered.json
+
+      - name: Stop the daemon
+        if: always()
+        run: bin/cook stop || true
+
+      - name: Upload artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cook-artifacts
+          if-no-files-found: ignore
+          path: |
+            artifacts/
+            tmp/cook.log
+            verdict.json
+            killed.json
+            recovered.json

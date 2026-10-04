@@ -1,0 +1,94 @@
+{
+  "schema": "cook.baseline/1",
+  "recorded_at": "2026-10-04T16:28:46Z",
+  "commit": "59df8ec",
+  "app": "fixtures/sample_app",
+  "command": "mix test test/features",
+  "runs_count": 3,
+  "total_ms": 47280,
+  "phases_ms": {
+    "checkout": 5,
+    "deps_fetch": 6778,
+    "npm_install": 221,
+    "browser_install": 513,
+    "compile": 27703,
+    "assets_build": 4442,
+    "db_setup": 551,
+    "test": 7041
+  },
+  "tests": 44,
+  "aggregate": "median over runs, per phase and for the total (so the phase medians need not sum to total_ms)",
+  "machine": {
+    "cores": 24,
+    "memory_mb": 15258,
+    "cpu": "AMD Ryzen AI 9 HX 370 w/ Radeon 890M",
+    "os": "Linux 7.2.5-3-omarchy",
+    "elixir": "1.20.4",
+    "otp": "29",
+    "node": "v24.21.0"
+  },
+  "caveats": [
+    "Hex, npm and Playwright browser download caches were warm: nothing large was downloaded.",
+    "No VM provisioning, no queue time and no checkout over the network (git archive from a local repo).",
+    "Real CI is slower than this; treat total_ms as a lower bound for a cold run."
+  ],
+  "runs": [
+    {
+      "run": 1,
+      "total_ms": 47280,
+      "phases_ms": {
+        "checkout": 4,
+        "deps_fetch": 6778,
+        "npm_install": 230,
+        "browser_install": 527,
+        "compile": 27703,
+        "assets_build": 4442,
+        "db_setup": 539,
+        "test": 7041
+      },
+      "failed_phases": [],
+      "tests": 44,
+      "failures": 0,
+      "test_exit_code": 0,
+      "test_status": "pass"
+    },
+    {
+      "run": 2,
+      "total_ms": 50236,
+      "phases_ms": {
+        "checkout": 5,
+        "deps_fetch": 7196,
+        "npm_install": 196,
+        "browser_install": 513,
+        "compile": 27594,
+        "assets_build": 7341,
+        "db_setup": 556,
+        "test": 6823
+      },
+      "failed_phases": [],
+      "tests": 44,
+      "failures": 1,
+      "test_exit_code": 2,
+      "test_status": "fail"
+    },
+    {
+      "run": 3,
+      "total_ms": 47078,
+      "phases_ms": {
+        "checkout": 5,
+        "deps_fetch": 6648,
+        "npm_install": 221,
+        "browser_install": 463,
+        "compile": 27883,
+        "assets_build": 4192,
+        "db_setup": 551,
+        "test": 7099
+      },
+      "failed_phases": [],
+      "tests": 44,
+      "failures": 0,
+      "test_exit_code": 0,
+      "test_status": "pass"
+    }
+  ]
+}

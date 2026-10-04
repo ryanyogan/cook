@@ -1,0 +1,314 @@
+{
+  "command": "bin/cook run --json",
+  "machine": {
+    "otp": "29",
+    "elixir": "1.20.4",
+    "cores": 24
+  },
+  "summary": {
+    "runs": 20,
+    "verdicts": {
+      "error": 0,
+      "fail": 6,
+      "pass": 14
+    },
+    "wall_ms": {
+      "count": 20,
+      "max": 5486,
+      "min": 5220,
+      "missing": 0,
+      "p50": 5321,
+      "p95": 5426
+    },
+    "duration_ms": {
+      "count": 20,
+      "max": 5449,
+      "min": 5196,
+      "missing": 0,
+      "p50": 5296,
+      "p95": 5400
+    },
+    "first_test_ms": {
+      "count": 20,
+      "max": 53,
+      "min": 23,
+      "missing": 0,
+      "p50": 43,
+      "p95": 52
+    },
+    "start_to_first_test_ms": {
+      "count": 20,
+      "max": 77,
+      "min": 53,
+      "missing": 0,
+      "p50": 68,
+      "p95": 77
+    },
+    "baseline_total_ms": 47280,
+    "speedup_p50": 8.89,
+    "speedup_p95": 8.71
+  },
+  "runs": [
+    {
+      "error": null,
+      "status": "pass",
+      "run": 1,
+      "selected": 44,
+      "exit_code": 0,
+      "wall_ms": 5486,
+      "duration_ms": 5449,
+      "first_test_ms": 23,
+      "failures": [],
+      "overhead_ms": 30
+    },
+    {
+      "error": null,
+      "status": "pass",
+      "run": 2,
+      "selected": 44,
+      "exit_code": 0,
+      "wall_ms": 5426,
+      "duration_ms": 5400,
+      "first_test_ms": 27,
+      "failures": [],
+      "overhead_ms": 31
+    },
+    {
+      "error": null,
+      "status": "pass",
+      "run": 3,
+      "selected": 44,
+      "exit_code": 0,
+      "wall_ms": 5339,
+      "duration_ms": 5315,
+      "first_test_ms": 46,
+      "failures": [],
+      "overhead_ms": 49
+    },
+    {
+      "error": null,
+      "status": "fail",
+      "run": 4,
+      "selected": 44,
+      "exit_code": 1,
+      "wall_ms": 5273,
+      "duration_ms": 5249,
+      "first_test_ms": 53,
+      "failures": [
+        "test/features/delivery_estimate_test.exs:8",
+        "test/features/product_management_test.exs:6"
+      ],
+      "overhead_ms": 56
+    },
+    {
+      "error": null,
+      "status": "pass",
+      "run": 5,
+      "selected": 44,
+      "exit_code": 0,
+      "wall_ms": 5373,
+      "duration_ms": 5347,
+      "first_test_ms": 42,
+      "failures": [],
+      "overhead_ms": 44
+    },
+    {
+      "error": null,
+      "status": "pass",
+      "run": 6,
+      "selected": 44,
+      "exit_code": 0,
+      "wall_ms": 5286,
+      "duration_ms": 5264,
+      "first_test_ms": 41,
+      "failures": [],
+      "overhead_ms": 43
+    },
+    {
+      "error": null,
+      "status": "pass",
+      "run": 7,
+      "selected": 44,
+      "exit_code": 0,
+      "wall_ms": 5281,
+      "duration_ms": 5257,
+      "first_test_ms": 43,
+      "failures": [],
+      "overhead_ms": 45
+    },
+    {
+      "error": null,
+      "status": "pass",
+      "run": 8,
+      "selected": 44,
+      "exit_code": 0,
+      "wall_ms": 5261,
+      "duration_ms": 5235,
+      "first_test_ms": 45,
+      "failures": [],
+      "overhead_ms": 49
+    },
+    {
+      "error": null,
+      "status": "pass",
+      "run": 9,
+      "selected": 44,
+      "exit_code": 0,
+      "wall_ms": 5355,
+      "duration_ms": 5330,
+      "first_test_ms": 45,
+      "failures": [],
+      "overhead_ms": 49
+    },
+    {
+      "error": null,
+      "status": "pass",
+      "run": 10,
+      "selected": 44,
+      "exit_code": 0,
+      "wall_ms": 5283,
+      "duration_ms": 5260,
+      "first_test_ms": 41,
+      "failures": [],
+      "overhead_ms": 44
+    },
+    {
+      "error": null,
+      "status": "fail",
+      "run": 11,
+      "selected": 44,
+      "exit_code": 1,
+      "wall_ms": 5347,
+      "duration_ms": 5316,
+      "first_test_ms": 44,
+      "failures": [
+        "test/features/delivery_estimate_test.exs:8"
+      ],
+      "overhead_ms": 47
+    },
+    {
+      "error": null,
+      "status": "fail",
+      "run": 12,
+      "selected": 44,
+      "exit_code": 1,
+      "wall_ms": 5291,
+      "duration_ms": 5261,
+      "first_test_ms": 44,
+      "failures": [
+        "test/features/delivery_estimate_test.exs:8"
+      ],
+      "overhead_ms": 48
+    },
+    {
+      "error": null,
+      "status": "pass",
+      "run": 13,
+      "selected": 44,
+      "exit_code": 0,
+      "wall_ms": 5220,
+      "duration_ms": 5196,
+      "first_test_ms": 43,
+      "failures": [],
+      "overhead_ms": 46
+    },
+    {
+      "error": null,
+      "status": "pass",
+      "run": 14,
+      "selected": 44,
+      "exit_code": 0,
+      "wall_ms": 5292,
+      "duration_ms": 5268,
+      "first_test_ms": 45,
+      "failures": [],
+      "overhead_ms": 47
+    },
+    {
+      "error": null,
+      "status": "fail",
+      "run": 15,
+      "selected": 44,
+      "exit_code": 1,
+      "wall_ms": 5392,
+      "duration_ms": 5367,
+      "first_test_ms": 52,
+      "failures": [
+        "test/features/delivery_estimate_test.exs:8"
+      ],
+      "overhead_ms": 55
+    },
+    {
+      "error": null,
+      "status": "pass",
+      "run": 16,
+      "selected": 44,
+      "exit_code": 0,
+      "wall_ms": 5321,
+      "duration_ms": 5297,
+      "first_test_ms": 43,
+      "failures": [],
+      "overhead_ms": 46
+    },
+    {
+      "error": null,
+      "status": "pass",
+      "run": 17,
+      "selected": 44,
+      "exit_code": 0,
+      "wall_ms": 5328,
+      "duration_ms": 5296,
+      "first_test_ms": 39,
+      "failures": [],
+      "overhead_ms": 45
+    },
+    {
+      "error": null,
+      "status": "fail",
+      "run": 18,
+      "selected": 44,
+      "exit_code": 1,
+      "wall_ms": 5290,
+      "duration_ms": 5264,
+      "first_test_ms": 46,
+      "failures": [
+        "test/features/delivery_estimate_test.exs:8"
+      ],
+      "overhead_ms": 48
+    },
+    {
+      "error": null,
+      "status": "fail",
+      "run": 19,
+      "selected": 44,
+      "exit_code": 1,
+      "wall_ms": 5346,
+      "duration_ms": 5321,
+      "first_test_ms": 42,
+      "failures": [
+        "test/features/delivery_estimate_test.exs:8"
+      ],
+      "overhead_ms": 47
+    },
+    {
+      "error": null,
+      "status": "pass",
+      "run": 20,
+      "selected": 44,
+      "exit_code": 0,
+      "wall_ms": 5325,
+      "duration_ms": 5300,
+      "first_test_ms": 43,
+      "failures": [],
+      "overhead_ms": 47
+    }
+  ],
+  "baseline": {
+    "file": "bench/baseline.json",
+    "recorded_at": "2026-10-04T16:28:46Z",
+    "total_ms": 47280
+  },
+  "recorded_at": "2026-10-04T16:31:40Z",
+  "percentile_method": "nearest rank, over runs with a pass or fail verdict",
+  "schema": "cook.bench/1"
+}
