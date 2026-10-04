@@ -51,6 +51,24 @@ jobs:
       - run: mix format --check-formatted
       - run: mix test
 
+  # The TypeScript engine's own checks: typecheck, lint and unit tests. No
+  # browser, no app boot.
+  engine:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: packages/cook
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: packages/cook/package-lock.json
+      - run: npm ci
+      - run: npm run check
+
   # Cook driving real browsers against the sample app. This is the only place
   # where Cook itself is checked end to end; it never runs in local `mix test`.
   e2e:
