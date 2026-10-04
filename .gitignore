@@ -45,3 +45,6 @@ npm-debug.log
 
 # Private planning doc; the repo is public.
 /docs/cook-spec.md
+
+# Wrangler cache from one-off `npx wrangler` commands
+/.wrangler/

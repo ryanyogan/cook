@@ -1,0 +1,173 @@
+{
+  "config": {
+    "configFile": "/work/app/.cook-playwright.config.mjs",
+    "rootDir": "/work/app/e2e",
+    "version": "1.63.0"
+  },
+  "suites": [
+    {
+      "title": "estimate.spec.ts",
+      "file": "estimate.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "FLAKY: effort estimate appears for a task",
+          "ok": false,
+          "tags": ["flaky"],
+          "tests": [
+            {
+              "timeout": 10000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "workerIndex": 6,
+                  "parallelIndex": 6,
+                  "status": "failed",
+                  "duration": 1837,
+                  "error": {
+                    "message": "Error: the estimator answered with an error\n\n\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32m0\u001b[39m\nReceived: \u001b[31m1\u001b[39m",
+                    "stack": "Error: the estimator answered with an error\n\n\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32m0\u001b[39m\nReceived: \u001b[31m1\u001b[39m\n    at /work/app/e2e/estimate.spec.ts:16:89",
+                    "location": {
+                      "file": "/work/app/e2e/estimate.spec.ts",
+                      "column": 89,
+                      "line": 16
+                    },
+                    "snippet": "  14 |   await expect(estimate.or(page.getByRole('alert'))).toBeVisible()\n  15 |   // Checked once, not polled: by now the page shows either the estimate or the error.\n> 16 |   expect(await page.getByRole('alert').count(), 'the estimator answered with an error').toBe(0)\n     |                                                                                         ^\n  17 |   await expect(estimate).toHaveText(/Estimated effort: \\d+ minutes/)\n  18 | })\n  19 |"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "/work/app/e2e/estimate.spec.ts",
+                        "column": 89,
+                        "line": 16
+                      },
+                      "message": "Error: the estimator answered with an error\n\n\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32m0\u001b[39m\nReceived: \u001b[31m1\u001b[39m\n\n  14 |   await expect(estimate.or(page.getByRole('alert'))).toBeVisible()\n  15 |   // Checked once, not polled: by now the page shows either the estimate or the error.\n> 16 |   expect(await page.getByRole('alert').count(), 'the estimator answered with an error').toBe(0)\n     |                                                                                         ^\n  17 |   await expect(estimate).toHaveText(/Estimated effort: \\d+ minutes/)\n  18 | })\n  19 |\n    at /work/app/e2e/estimate.spec.ts:16:89"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-04T18:29:45.085Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/work/app/test-results/estimate-FLAKY-effort-estimate-appears-for-a-task-chromium-repeat6/error-context.md"
+                    },
+                    {
+                      "name": "trace",
+                      "contentType": "application/zip",
+                      "path": "/work/app/test-results/estimate-FLAKY-effort-estimate-appears-for-a-task-chromium-repeat6/trace.zip"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "/work/app/e2e/estimate.spec.ts",
+                    "column": 89,
+                    "line": 16
+                  }
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "cd1df33a201a1a383f4b-7954e60b3e45e092f27c",
+          "file": "estimate.spec.ts",
+          "line": 6,
+          "column": 1
+        },
+        {
+          "title": "shows the list",
+          "ok": true,
+          "tags": ["flaky"],
+          "tests": [
+            {
+              "timeout": 10000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1819,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-04T18:29:45.073Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "cd1df33a201a1a383f4b-4c9fa1eec359de1a64c7",
+          "file": "estimate.spec.ts",
+          "line": 20,
+          "column": 1
+        }
+      ],
+      "suites": [
+        {
+          "title": "when signed in",
+          "file": "estimate.spec.ts",
+          "line": 30,
+          "column": 1,
+          "specs": [
+            {
+              "title": "greets the user",
+              "ok": true,
+              "tags": ["flaky"],
+              "tests": [
+                {
+                  "timeout": 10000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 1,
+                      "status": "passed",
+                      "duration": 1827,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-10-04T18:29:44.967Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "cd1df33a201a1a383f4b-5becc6cfb714ac4a0a87",
+              "file": "estimate.spec.ts",
+              "line": 31,
+              "column": 1
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-10-04T18:29:44.631Z",
+    "duration": 2639.7909999999997,
+    "expected": 2,
+    "skipped": 0,
+    "unexpected": 1,
+    "flaky": 0
+  }
+}

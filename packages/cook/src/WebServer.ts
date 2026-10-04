@@ -3,8 +3,9 @@ import { readFileSync, rmSync, statSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { Context, Effect, Exit, Layer, Scope, Semaphore } from "effect"
 import { ChildProcessSpawner } from "effect/process"
+import type { ServerSnapshot } from "./Classify.ts"
 import { PoolError } from "./errors.ts"
-import { cookHome, portUsed, tail, urlAvailable } from "./os.ts"
+import { cookHome, portUsed, tail, tcpAccepts, urlAvailable } from "./os.ts"
 import {
   type Project,
   parseWebServerDump,
@@ -46,6 +47,28 @@ const probeFor = (entry: WebServerEntry): (() => Promise<boolean>) => {
   return async () => true
 }
 
+/**
+ * Whether the entry's port accepts a TCP connection. Unlike the readiness probe this asks the
+ * kernel, not the application, so a busy server is never mistaken for a dead one.
+ */
+export const acceptingFor = (entry: WebServerEntry): (() => Promise<boolean>) => {
+  if (entry.url !== undefined) {
+    try {
+      const url = new URL(entry.url)
+      const port = url.port !== "" ? Number(url.port) : url.protocol === "https:" ? 443 : 80
+      const host = url.hostname.replace(/^\[|\]$/g, "")
+      return () => tcpAccepts(host, port)
+    } catch {
+      return async () => true
+    }
+  }
+  if (entry.port !== undefined) {
+    const port = entry.port
+    return () => portUsed(port)
+  }
+  return async () => true
+}
+
 const describe = (entry: WebServerEntry, index: number): WebServerInfo => ({
   name: entry.name ?? `webServer[${index}]`,
   command: entry.command,
@@ -63,6 +86,8 @@ interface ProjectServers {
   readonly envKey: string
   readonly runnerEnv: Readonly<Record<string, string>>
   readonly servers: ReadonlyArray<Supervised<WebServerInfo> | { readonly adopted: WebServerInfo }>
+  /** Per server, in the same order: does its port accept a connection right now. */
+  readonly accepting: ReadonlyArray<() => Promise<boolean>>
 }
 
 /**
@@ -76,6 +101,8 @@ export class WebServer extends Context.Service<
     readonly ensure: (project: Project) => Effect.Effect<WebServers, PoolError>
     /** The entries of a project, without starting anything. */
     readonly entries: (project: Project) => Effect.Effect<ReadonlyArray<WebServerEntry>, PoolError>
+    /** The project's servers as they are right now. Starts nothing and waits for nothing. */
+    readonly snapshot: (project: Project) => Effect.Effect<ReadonlyArray<ServerSnapshot>>
   }
 >()("cook/WebServer") {
   static readonly layer = Layer.effect(
@@ -128,9 +155,11 @@ export class WebServer extends Context.Service<
           )
           const id = idOf(project)
           const servers: Array<Supervised<WebServerInfo> | { readonly adopted: WebServerInfo }> = []
+          const accepting: Array<() => Promise<boolean>> = []
           for (const [index, entry] of found.entries()) {
             const info = describe(entry, index)
             const probe = probeFor(entry)
+            accepting.push(acceptingFor(entry))
             if ((entry.url !== undefined || entry.port !== undefined) && (yield* Effect.promise(probe))) {
               if (entry.reuseExistingServer) {
                 servers.push({ adopted: { ...info, adopted: true } })
@@ -174,6 +203,7 @@ export class WebServer extends Context.Service<
             envKey: JSON.stringify(project.env),
             runnerEnv,
             servers,
+            accepting,
           } satisfies ProjectServers
         })
 
@@ -213,7 +243,40 @@ export class WebServer extends Context.Service<
           return { config: wrapperPath(project), runnerEnv: current.runnerEnv, servers, cold }
         })
 
-      return { ensure, entries }
+      const snapshot = (project: Project) =>
+        Effect.suspend(() => {
+          const current = projects.get(project.configFile)
+          return Effect.forEach(current?.servers ?? [], (server, index) =>
+            Effect.gen(function* () {
+              const accepting = yield* Effect.promise(() =>
+                (current?.accepting[index] ?? (async () => true))(),
+              )
+              if ("adopted" in server) {
+                const name = server.adopted.name
+                return {
+                  kind: "web_server",
+                  name,
+                  pid: null,
+                  starts: null,
+                  state: "adopted",
+                  accepting,
+                } as const
+              }
+              const status = yield* server.status
+              const ready = status._tag === "ready" ? status.ready : null
+              return {
+                kind: "web_server",
+                name: ready?.info.name ?? server.name,
+                pid: ready?.pid ?? null,
+                starts: ready?.starts ?? null,
+                state: status._tag,
+                accepting,
+              } as const
+            }),
+          )
+        })
+
+      return { ensure, entries, snapshot }
     }),
   )
 }

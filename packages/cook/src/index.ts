@@ -7,8 +7,11 @@ import { Runner, type RunOptions, type RunResult } from "./Runner.ts"
 import { WebServer } from "./WebServer.ts"
 
 export { BrowserServer, type BrowserServerInfo } from "./BrowserServer.ts"
+export { classify, type Death, type ServerIdentity, type ServerSnapshot } from "./Classify.ts"
+export { Coordinator, type CoordinatorApi, makeCoordinator, type RunRequest } from "./Coordinator.ts"
 export { type CookError, PoolError, ProjectError, RunError } from "./errors.ts"
 export { type Project, type ProjectSpec, resolveProject, type WebServerEntry } from "./Project.ts"
+export { type TestRow, testRows } from "./Report.ts"
 export {
   defaultTestTimeoutMs,
   type PlaywrightReport,
@@ -17,7 +20,10 @@ export {
   type RunResult,
   type RunTimings,
 } from "./Runner.ts"
+export { openStore, type Store } from "./Store.ts"
+export { StoreService } from "./StoreService.ts"
 export type { Ready, Status } from "./Supervised.ts"
+export { buildVerdict, exitCode, summary, Verdict, verdictSchema } from "./Verdict.ts"
 export { WebServer, type WebServerInfo, type WebServers } from "./WebServer.ts"
 
 /**
