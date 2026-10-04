@@ -41,7 +41,7 @@ const ran = (over: Partial<RanSuite> = {}): RanSuite => ({
     },
     webServers: [
       {
-        info: { name: "webServer[0]", command: "npm run dev", adopted: false },
+        info: { name: "webServer[0]", command: "npm run dev", adopted: false, mode: "dev" },
         pid: 20,
         startMs: 5,
         starts: 1,

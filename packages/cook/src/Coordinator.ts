@@ -3,6 +3,7 @@ import { copyFileSync, mkdirSync, realpathSync } from "node:fs"
 import { join, resolve } from "node:path"
 import { Cause, Context, Duration, Effect, Layer, Option, Semaphore } from "effect"
 import { BrowserServer } from "./BrowserServer.ts"
+import type { ServeRequest } from "./Build.ts"
 import { classify, describeDeath, type ServerIdentity, type ServerSnapshot, staleReady } from "./Classify.ts"
 import {
   defaultOrderPolicy,
@@ -41,11 +42,13 @@ export interface RunRequest {
   readonly trace?: TracePolicy
   /** Default `longest-first`, from the durations in the store. */
   readonly order?: OrderPolicy
+  /** Default `auto`: build serving where the project's `cook.config.json` describes a build. */
+  readonly serve?: ServeRequest
 }
 
 /** What the coordinator needs from a finished run. */
 export type RanSuite = Pick<RunResult, "runId" | "runDir" | "exitCode" | "report" | "timings" | "pool"> &
-  Partial<Pick<RunResult, "order">>
+  Partial<Pick<RunResult, "order" | "serving">>
 
 export interface CoordinatorDeps {
   readonly run: (spec: ProjectSpec, options: RunOptions) => Effect.Effect<RanSuite, CookError>
@@ -157,6 +160,7 @@ const reproPrefix = (path: string, request: RunRequest): string =>
     path,
     ...Object.entries(request.env ?? {}).map(([key, value]) => `--env ${key}=${value}`),
     ...(request.config !== undefined ? [`--config ${request.config}`] : []),
+    ...(request.serve !== undefined && request.serve !== "auto" ? [`--serve ${request.serve}`] : []),
   ].join(" ")
 
 const errorOf = (error: CookError): { reason: string; message: string } => {
@@ -173,6 +177,16 @@ const errorOf = (error: CookError): { reason: string; message: string } => {
         reason: "runner_crashed",
         message: `${error.reason}${error.logFile !== undefined ? ` (output in ${error.logFile})` : ""}`,
       }
+    case "BuildError":
+      return error.kind === "config"
+        ? { reason: "build_config_invalid", message: error.reason }
+        : {
+            reason: "build_failed",
+            message:
+              `${error.server}: ${error.reason}. No test was run.` +
+              (error.logTail ? `\n${error.logTail}` : "") +
+              (error.logFile !== undefined ? `\n(full build output in ${error.logFile})` : ""),
+          }
   }
 }
 
@@ -214,6 +228,7 @@ export const makeCoordinator = (deps: CoordinatorDeps): CoordinatorApi => {
       const common: RunOptions = {
         testTimeoutMs: capMs,
         ...(request.workers !== undefined ? { workers: request.workers } : {}),
+        ...(request.serve !== undefined ? { serve: request.serve } : {}),
       }
       const options: RunOptions = {
         ...common,
@@ -232,6 +247,7 @@ export const makeCoordinator = (deps: CoordinatorDeps): CoordinatorApi => {
         reproPrefix: reproPrefix(path, request),
         tracePolicy,
         orderPolicy,
+        serveRequested: request.serve ?? ("auto" as const),
       }
       yield* settle(spec)
       const outcome = yield* deps.run(spec, options).pipe(Effect.timeoutOption(runTimeout), Effect.result)
@@ -248,6 +264,18 @@ export const makeCoordinator = (deps: CoordinatorDeps): CoordinatorApi => {
           timings: null,
           rows,
           runner: null,
+          // A failed build still reports what the check and the build cost.
+          ...(outcome.failure._tag === "BuildError"
+            ? {
+                serving: {
+                  requested: request.serve ?? "auto",
+                  checkMs: outcome.failure.checkMs,
+                  buildMs: outcome.failure.buildMs,
+                  restartMs: null,
+                  servers: [],
+                },
+              }
+            : {}),
           error: errorOf(outcome.failure),
         })
       } else if (Option.isNone(outcome.success)) {
@@ -315,6 +343,7 @@ export const makeCoordinator = (deps: CoordinatorDeps): CoordinatorApi => {
           rows,
           artifacts,
           order: result.order ?? null,
+          serving: result.serving ?? null,
           rerun,
           globalErrors: globalErrors(result.report),
           runner: {

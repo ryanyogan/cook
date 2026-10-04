@@ -1,4 +1,5 @@
 import { Schema } from "effect"
+import { type ServeRequest, serveRequests } from "./Build.ts"
 import {
   type OrderPolicy,
   orderPolicies,
@@ -8,6 +9,7 @@ import {
 } from "./Diagnostic.ts"
 import type { TestRow } from "./Report.ts"
 import type { OrderOutcome, RunTimings } from "./Runner.ts"
+import type { Serving } from "./WebServer.ts"
 
 export const verdictSchema = "cook.verdict/1"
 
@@ -34,6 +36,18 @@ const Timing = Schema.Struct({
    * inside `duration_ms`, and in neither `overhead_ms` nor `tests_ms`.
    */
   diagnostic_rerun_ms: Schema.optionalKey(Schema.NullOr(Schema.Number)),
+  /**
+   * Wall time of the project's build command(s) in this run; null when nothing was built. It is
+   * inside `duration_ms`, and in none of `overhead_ms`, `ready_wait_ms` and `tests_ms`.
+   */
+  build_ms: Schema.optionalKey(Schema.NullOr(Schema.Number)),
+  /** Deciding whether the build is current (inside `ready_wait_ms`). Null when no server is build-served. */
+  build_check_ms: Schema.optionalKey(Schema.NullOr(Schema.Number)),
+  /**
+   * Stopping the web servers and starting them until ready, after a build or a change of mode
+   * (inside `ready_wait_ms` and `overhead_ms`). Null when they were already running.
+   */
+  server_restart_ms: Schema.optionalKey(Schema.NullOr(Schema.Number)),
 })
 
 export const Failure = Schema.Struct({
@@ -108,6 +122,21 @@ export const Verdict = Schema.Struct({
       unknown: Schema.Number,
     }),
   ),
+  /** How the project's web servers were served in this run. */
+  serving: Schema.optionalKey(
+    Schema.Struct({
+      /** What the run asked for: `auto` follows the project's `cook.config.json`. */
+      requested: Schema.Literals(serveRequests),
+      servers: Schema.Array(
+        Schema.Struct({
+          name: Schema.String,
+          mode: Schema.Literals(["dev", "build"]),
+          /** Why the build ran in this run; null when it was current, or in dev mode. */
+          rebuilt: Schema.NullOr(Schema.String),
+        }),
+      ),
+    }),
+  ),
   /** Playwright has no run seed. Always null; kept for the shape of the Elixir engine's verdict. */
   seed: Schema.Null,
 })
@@ -153,6 +182,9 @@ export interface VerdictInput {
   readonly order?: OrderOutcome | null
   /** The diagnostic rerun: its wall time and what it said per failed test id. Null: none was made. */
   readonly rerun?: { readonly ms: number; readonly outcomes: ReadonlyMap<string, RerunOutcome> } | null
+  readonly serveRequested?: ServeRequest
+  /** What the pool reported about serving; for a failed build, what the check and the build cost. */
+  readonly serving?: Serving | null
 }
 
 const schedulingOf = (input: VerdictInput): NonNullable<Verdict["scheduling"]> => {
@@ -243,6 +275,9 @@ export const buildVerdict = (input: VerdictInput): Verdict => {
       ? timings.spawnToEndMs - timings.spawnToFirstTestMs
       : 0
   const rerunMs = input.rerun?.ms ?? 0
+  const serving = input.serving ?? null
+  const buildMs = serving?.buildMs ?? 0
+  const buildServed = serving?.servers.some((server) => server.mode === "build") ?? false
   // A run that ended in an error has no trustworthy failures: they are not reported.
   const failures = error === null ? failed.map((row) => failureOf(row, input)) : []
   return {
@@ -252,7 +287,7 @@ export const buildVerdict = (input: VerdictInput): Verdict => {
     path: input.path,
     duration_ms: input.durationMs,
     timing: {
-      overhead_ms: Math.max(0, input.durationMs - testSpan - rerunMs),
+      overhead_ms: Math.max(0, input.durationMs - testSpan - rerunMs - buildMs),
       tests_ms: ran.reduce((sum, row) => sum + row.durationMs, 0),
       slowest_test_ms: ran.reduce((max, row) => Math.max(max, row.durationMs), 0),
       first_test_ms:
@@ -260,11 +295,14 @@ export const buildVerdict = (input: VerdictInput): Verdict => {
           ? input.queueMs + timings.poolWaitMs + timings.spawnToFirstTestMs
           : null,
       queue_ms: input.queueMs,
-      ready_wait_ms: timings?.poolWaitMs ?? 0,
+      ready_wait_ms: Math.max(0, (timings?.poolWaitMs ?? 0) - buildMs),
       load_ms: timings?.spawnToBeginMs ?? null,
       runner_start_ms: timings?.spawnToFirstTestMs ?? null,
       client_ms: input.clientMs,
       diagnostic_rerun_ms: input.rerun != null ? input.rerun.ms : null,
+      build_ms: serving?.buildMs ?? null,
+      build_check_ms: serving !== null && (buildServed || serving.buildMs !== null) ? serving.checkMs : null,
+      server_restart_ms: serving?.restartMs ?? null,
     },
     selected,
     skipped: known !== null ? Math.max(0, known - selected) : 0,
@@ -280,6 +318,10 @@ export const buildVerdict = (input: VerdictInput): Verdict => {
     error,
     trace: input.tracePolicy ?? "project",
     scheduling: schedulingOf(input),
+    serving: {
+      requested: serving?.requested ?? input.serveRequested ?? "auto",
+      servers: (serving?.servers ?? []).map(({ name, mode, rebuilt }) => ({ name, mode, rebuilt })),
+    },
     seed: null,
   }
 }
@@ -297,6 +339,10 @@ const indent = (text: string, by: string) =>
 /** The short human summary `cook run` prints without `--json`. */
 export const summary = (verdict: Verdict): string => {
   if (verdict.status === "error") {
+    const built = verdict.timing.build_ms
+    if (built != null) {
+      return `ERROR ${verdict.error?.reason ?? "unknown"} after ${seconds(verdict.duration_ms)} (build ${seconds(built)})\n${indent(verdict.error?.message ?? "", "  ")}\n`
+    }
     return `ERROR ${verdict.error?.reason ?? "unknown"} after ${seconds(verdict.duration_ms)}\n${indent(verdict.error?.message ?? "", "  ")}\n`
   }
   const { counts, timing } = verdict
@@ -305,6 +351,8 @@ export const summary = (verdict: Verdict): string => {
       ? `PASS ${counts.passed} tests in ${seconds(verdict.duration_ms)}`
       : `FAIL ${counts.failed} of ${counts.passed + counts.failed} tests failed in ${seconds(verdict.duration_ms)}`
   const notes = [
+    ...(timing.build_ms != null ? [`build ${seconds(timing.build_ms)}`] : []),
+    ...(verdict.serving?.servers.some((server) => server.mode === "build") ? ["served from a build"] : []),
     `overhead ${seconds(timing.overhead_ms)}`,
     `slowest test ${seconds(timing.slowest_test_ms)}`,
     ...(counts.skipped > 0 ? [`${counts.skipped} skipped by the test files`] : []),

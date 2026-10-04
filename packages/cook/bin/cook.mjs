@@ -12,6 +12,10 @@ const usage = `usage:
                                          failed tests once more with tracing on (never changes the
                                          verdict); project: the project's own trace setting
            [--order longest-first|project]          default longest-first, from recorded durations
+           [--serve auto|dev|build]      default auto: web servers named in the project's
+                                         cook.config.json are built and served from the build
+                                         (rebuilt when its inputs changed); dev: the Playwright
+                                         config's own webServer command; build: fail if not set up
   cook status [--json]                   daemon and pool status
   cook stop                              stop the daemon and everything it started
 environment: COOK_PORT (4050), COOK_HOME (~/.cook), COOK_START_TIMEOUT_MS (15000)
@@ -162,6 +166,11 @@ const commands = {
         if (!["longest-first", "project"].includes(body.order)) {
           fail(`--order wants longest-first or project, got "${body.order}"`)
         }
+      } else if (arg === "--serve") {
+        body.serve = value()
+        if (!["auto", "dev", "build"].includes(body.serve)) {
+          fail(`--serve wants auto, dev or build, got "${body.serve}"`)
+        }
       } else if (arg.startsWith("--")) fail(`unknown option ${arg}\n${usage}`)
       else if (
         body.path === undefined &&
@@ -199,6 +208,11 @@ const commands = {
       for (const server of project.servers) {
         lines.push(
           `    ${server.name}: ${server.state}${server.accepting ? "" : ", not accepting"}` +
+            (server.mode !== undefined
+              ? server.mode === "build"
+                ? `, serving a build (${server.detail})`
+                : `, dev serving (${server.detail})`
+              : "") +
             (server.pid !== null ? `, pid ${server.pid}, started ${server.starts}x` : ""),
         )
       }

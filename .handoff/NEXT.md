@@ -45,8 +45,15 @@ another machine, clone the repo and note what does NOT come with it:
 ## Progress and plan (updated 2026-10-04, evening)
 - Done and pushed (CI green incl. the `engine` job): `ts-pool`, `ts-runs`,
   `cloudflare-spike`, `speed-profile`, `ts-order` (6.69 s p50 on the dev server, from 10.65 s).
-- `ts-build-mode` was interrupted by the move: read `.handoff/ts-build-mode.md` for exactly
-  how far it got before continuing it.
+- `ts-build-mode` was interrupted by the move with its code finished and checks passing
+  (76 unit tests): opt-in `cook.config.json` with build and serve commands, a freshness
+  check of about 1 ms, `--serve auto|dev|build`. Measured full run p50: 4.45 s on a warm
+  production build (8 workers) against 6.72 s on the dev server; after an edit 6.10 s
+  against 6.74 s; a one-file run after an edit is slower on a build (2.62 s against
+  1.11 s). Still to do there, see `.handoff/ts-build-mode.md`: verify a failing build and
+  recovery through the daemon, a bad config through the daemon, a full plain
+  `npx playwright test` in the fixture, the build record surviving a daemon restart, and
+  decide a rule for choosing dev or build serving for small runs after an edit.
 - Key finding (`speed-profile.md`): warmth alone saves nothing on the fixture (about 11 s).
   Production build + slow tests first + tracing off + 8 workers gives 4.5 s; the floor
   (three slow tests) is 4.3 s.

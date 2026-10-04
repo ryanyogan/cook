@@ -7,6 +7,18 @@ import { Runner, type RunOptions, type RunResult } from "./Runner.ts"
 import { WebServer } from "./WebServer.ts"
 
 export { BrowserServer, type BrowserServerInfo } from "./BrowserServer.ts"
+export {
+  type BuildRecord,
+  CookConfig,
+  cookConfigName,
+  decideFreshness,
+  loadCookConfig,
+  parseCookConfig,
+  planServing,
+  type ServeMode,
+  type ServeRequest,
+  serveRequests,
+} from "./Build.ts"
 export { classify, type Death, type ServerIdentity, type ServerSnapshot } from "./Classify.ts"
 export { Coordinator, type CoordinatorApi, makeCoordinator, type RunRequest } from "./Coordinator.ts"
 export {
@@ -19,7 +31,7 @@ export {
   type TracePolicy,
   tracePolicies,
 } from "./Diagnostic.ts"
-export { type CookError, PoolError, ProjectError, RunError } from "./errors.ts"
+export { BuildError, type CookError, PoolError, ProjectError, RunError } from "./errors.ts"
 export { type Project, type ProjectSpec, resolveProject, type WebServerEntry } from "./Project.ts"
 export { type TestRow, testRows } from "./Report.ts"
 export {
@@ -35,7 +47,7 @@ export { openStore, type Store } from "./Store.ts"
 export { StoreService } from "./StoreService.ts"
 export type { Ready, Status } from "./Supervised.ts"
 export { buildVerdict, exitCode, summary, Verdict, verdictSchema } from "./Verdict.ts"
-export { WebServer, type WebServerInfo, type WebServers } from "./WebServer.ts"
+export { type Serving, WebServer, type WebServerInfo, type WebServers } from "./WebServer.ts"
 
 /**
  * The warm pool: browser servers, web servers and the runner. Everything it starts lives in the

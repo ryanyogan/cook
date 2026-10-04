@@ -1,5 +1,6 @@
 import { Effect, Schema } from "effect"
 import { HttpRouter, type HttpServerRequest, HttpServerResponse } from "effect/http"
+import { serveRequests } from "./Build.ts"
 import { Coordinator, type RunRequest } from "./Coordinator.ts"
 import { orderPolicies, tracePolicies } from "./Diagnostic.ts"
 import { cookHome } from "./os.ts"
@@ -21,6 +22,8 @@ export const RunBody = Schema.Struct({
   trace: Schema.optionalKey(Schema.Literals(tracePolicies)),
   /** `longest-first` (default) or `project`. */
   order: Schema.optionalKey(Schema.Literals(orderPolicies)),
+  /** `auto` (default: what the project's cook.config.json says), `dev` or `build`. */
+  serve: Schema.optionalKey(Schema.Literals(serveRequests)),
 })
 const decodeRunBody = Schema.decodeUnknownEffect(RunBody)
 const decodeStoredVerdict = Schema.decodeUnknownEffect(Verdict)
@@ -35,6 +38,7 @@ export const toRunRequest = (body: typeof RunBody.Type): RunRequest => ({
   ...(body.client_started_ms !== undefined ? { clientStartedMs: body.client_started_ms } : {}),
   ...(body.trace !== undefined ? { trace: body.trace } : {}),
   ...(body.order !== undefined ? { order: body.order } : {}),
+  ...(body.serve !== undefined ? { serve: body.serve } : {}),
 })
 
 const query = (request: HttpServerRequest.HttpServerRequest) =>

@@ -20,4 +20,20 @@ export class RunError extends Data.TaggedError("RunError")<{
   readonly logFile?: string
 }> {}
 
-export type CookError = ProjectError | PoolError | RunError
+/**
+ * Build serving could not be used: the project's `cook.config.json` is wrong (`kind: "config"`),
+ * or its build command failed (`kind: "build"`). No test ran.
+ */
+export class BuildError extends Data.TaggedError("BuildError")<{
+  readonly kind: "config" | "build"
+  readonly server: string
+  readonly reason: string
+  /** The end of the build's output. */
+  readonly logTail?: string
+  readonly logFile?: string
+  /** Milliseconds spent deciding whether the build was current, and in the build command. */
+  readonly checkMs: number
+  readonly buildMs: number | null
+}> {}
+
+export type CookError = ProjectError | PoolError | RunError | BuildError

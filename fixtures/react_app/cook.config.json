@@ -1,0 +1,12 @@
+{
+  "webServers": [
+    {
+      "entry": 0,
+      "build": "npm run build",
+      "serve": "npm run preview -- --port $PORT --host 127.0.0.1 --strictPort",
+      "inputs": ["src", "vite.config.ts", "tsconfig.json", "package.json", "package-lock.json"],
+      "outputs": ["dist"]
+    }
+  ],
+  "workers": { "build": 8 }
+}

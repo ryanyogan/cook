@@ -19,6 +19,8 @@ export interface ServerSnapshot extends ServerIdentity {
    * no port to check.
    */
   readonly accepting: boolean
+  /** Web servers only: `dev` (the config's own command) or `build` (the project's build, served). */
+  readonly mode?: "dev" | "build"
 }
 
 export type DeathWhy =

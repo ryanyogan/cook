@@ -5,11 +5,12 @@ import { fileURLToPath } from "node:url"
 import { Context, Effect, Layer } from "effect"
 import { ChildProcessSpawner } from "effect/process"
 import { BrowserServer, type BrowserServerInfo } from "./BrowserServer.ts"
+import type { ServeRequest } from "./Build.ts"
 import { type CookError, RunError } from "./errors.ts"
 import { cookHome } from "./os.ts"
 import { type ProjectSpec, resolveProject } from "./Project.ts"
 import { type Ready, spawnGuarded } from "./Supervised.ts"
-import { WebServer, type WebServers } from "./WebServer.ts"
+import { type Serving, WebServer, type WebServers } from "./WebServer.ts"
 
 const reporterScript = fileURLToPath(new URL("../assets/reporter.cjs", import.meta.url))
 
@@ -31,6 +32,8 @@ export interface RunOptions {
    * first, through the reporter's `preprocess` hook (`assets/order.cjs`).
    */
   readonly durations?: ReadonlyMap<string, number>
+  /** `dev` or `build` to force how the web servers are served; default `auto` (the project's file). */
+  readonly serve?: ServeRequest
 }
 
 /** What the ordering hook did, as the reporter recorded it. */
@@ -88,6 +91,8 @@ export interface RunResult {
   readonly workers: number | null
   /** Null when no durations were given, or the installed Playwright has no `preprocess` hook. */
   readonly order: OrderOutcome | null
+  /** How the web servers were served, and what the freshness check, build and restart cost. */
+  readonly serving: Serving
   /** The command that was run, for the record. */
   readonly command: ReadonlyArray<string>
   readonly pool: {
@@ -165,7 +170,10 @@ export class Runner extends Context.Service<
             const calledAt = Date.now()
             const project = yield* resolveProject(spec)
             const [browser, web] = yield* Effect.all(
-              [browserServer.ensure(project), webServer.ensure(project)],
+              [
+                browserServer.ensure(project),
+                webServer.ensure(project, options.serve !== undefined ? { serve: options.serve } : {}),
+              ],
               { concurrency: 2 },
             )
             const runId = randomUUID()
@@ -179,7 +187,12 @@ export class Runner extends Context.Service<
               mkdirSync(runDir, { recursive: true })
               writeFileSync(orderFile, JSON.stringify(Object.fromEntries(options.durations ?? [])))
             }
-            const args = [project.playwrightCli, ...runnerArgs(web.config, options)]
+            // The project's file may name the best worker count for the mode; the caller's wins.
+            const workers = options.workers ?? web.workers
+            const args = [
+              project.playwrightCli,
+              ...runnerArgs(web.config, { ...options, ...(workers !== undefined ? { workers } : {}) }),
+            ]
             const spawnedAt = Date.now()
             const handle = yield* spawnGuarded(
               spawner,
@@ -216,6 +229,7 @@ export class Runner extends Context.Service<
               tests: events?.tests ?? null,
               workers: events?.workers ?? null,
               order: events?.order ?? null,
+              serving: web.serving,
               command: [process.execPath, ...args],
               pool: { cold: browser.cold || web.cold, browserServer: browser.ready, webServers: web.servers },
             } satisfies RunResult
