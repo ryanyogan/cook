@@ -1,0 +1,14 @@
+node_modules/
+dist/
+.output/
+.nitro/
+.tanstack/
+.vite/
+data/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+test-results/
+playwright-report/
+blob-report/
+playwright/.cache/

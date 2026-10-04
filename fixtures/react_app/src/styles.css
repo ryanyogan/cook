@@ -1,0 +1,25 @@
+:root { font-family: system-ui, sans-serif; color: #1c2430; background: #f6f7f9; }
+body { margin: 0; }
+header.site { display: flex; gap: 1rem; align-items: center; padding: 0.75rem 1.5rem; background: #fff; border-bottom: 1px solid #dde1e7; }
+header.site nav { display: flex; gap: 1rem; flex: 1; }
+header.site a { color: #2f4a8a; text-decoration: none; transition: color 150ms ease; }
+header.site a.active { font-weight: 600; }
+main { max-width: 760px; margin: 1.5rem auto; padding: 0 1.5rem; }
+form.stack { display: grid; gap: 0.75rem; max-width: 420px; }
+label { display: grid; gap: 0.25rem; font-size: 0.9rem; }
+input, select, textarea, button { font: inherit; padding: 0.4rem 0.6rem; }
+button { cursor: pointer; transition: background-color 150ms ease; }
+.error { color: #b3261e; font-size: 0.85rem; }
+.notice { background: #e7f4ea; border: 1px solid #b7dcbf; padding: 0.5rem 0.75rem; border-radius: 4px; }
+ul.tasks, ul.plain { list-style: none; padding: 0; display: grid; gap: 0.5rem; }
+ul.tasks li { display: flex; gap: 0.75rem; align-items: center; background: #fff; border: 1px solid #dde1e7; border-radius: 4px; padding: 0.5rem 0.75rem; transition: opacity 200ms ease; }
+ul.tasks li.done a { text-decoration: line-through; opacity: 0.6; }
+ul.tasks li a { flex: 1; }
+.badge { font-size: 0.75rem; padding: 0.1rem 0.45rem; border-radius: 999px; background: #e3e7ee; }
+.badge.high { background: #fbd9d5; }
+.toolbar { display: flex; gap: 0.5rem; align-items: end; flex-wrap: wrap; margin: 1rem 0; }
+.fade-in { animation: fade-in 250ms ease; }
+@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}

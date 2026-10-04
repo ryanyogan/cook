@@ -4,9 +4,13 @@ Work on Cook is done by a chain of short-lived agents. No agent is trusted to
 remember anything: the files in this directory are the only shared memory.
 
 ## Before you start
-1. Read `.handoff/DESIGN.md` (architecture decisions, already made; do not re-litigate).
-2. Read every other `.handoff/*.md` (what earlier agents did, verified, and left open).
-3. The product spec is `docs/cook-spec.md`. Only Phase 0 and Phase 1 are in scope.
+1. Read `.handoff/NEXT.md` (current direction) and `.handoff/DESIGN-TS.md` (architecture
+   decisions for the TypeScript engine, already made; do not re-litigate). `DESIGN.md`
+   describes the frozen Elixir engine.
+2. Read the other `.handoff/*.md` files your brief names (what earlier agents did, verified,
+   and left open).
+3. The product spec is `docs/cook-spec.md` (private, git-ignored, written before the target
+   changed from Phoenix to Playwright Test). Your scope is your brief.
 
 ## Context budget: stay under 170k tokens
 - Never dump whole files or dependency trees. Use `grep -n`, read line ranges, and
