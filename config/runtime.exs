@@ -34,6 +34,21 @@ if System.get_env("COOK_TRACE") in ~w(1 true) do
   config :cook, Cook.Pool, trace: true
 end
 
+# COOK_MAX_CASES=N: scheduling units (tests of split modules, or whole modules)
+# running at once. COOK_SHARD=test|packed|off: how `Cook.Agent.Shards` splits
+# `async: true` modules (`off` is the old module-level scheduling).
+if max_cases = System.get_env("COOK_MAX_CASES") do
+  config :cook, Cook.Pool, max_cases: String.to_integer(max_cases)
+end
+
+if shard = System.get_env("COOK_SHARD") do
+  if shard in ~w(test packed off) do
+    config :cook, Cook.Pool, shard: String.to_atom(shard)
+  else
+    raise "COOK_SHARD must be test, packed or off, got: #{inspect(shard)}"
+  end
+end
+
 # COOK_DAEMON=1 (set by `bin/cook start`) runs the endpoint as a plain server:
 # no asset watchers next to the pool's own OS processes.
 if System.get_env("COOK_DAEMON") in ~w(1 true) do

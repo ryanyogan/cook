@@ -125,21 +125,40 @@ Warm, 20 full-suite runs through `bin/cook run --json`:
 
 | | p50 | p95 |
 | --- | --- | --- |
-| CLI wall time | 5321 ms | 5426 ms |
-| verdict `duration_ms` | 5296 ms | 5400 ms |
-| `timing.first_test_ms` | 43 ms | 52 ms |
-| CLI start to first test | 68 ms | 77 ms |
+| CLI wall time | 4433 ms | 4481 ms |
+| verdict `duration_ms` | 4410 ms | 4455 ms |
+| `timing.first_test_ms` | 47 ms | 52 ms |
+| CLI start to first test | 72 ms | 77 ms |
 
-Speedup against the baseline: **8.89x at p50**, 8.71x at p95. This is below
-the 10x target set for this phase. The warm run cannot get shorter than its
-longest test module (about 5.3 s, with one 4.4 s test), because tests inside a
-module run serially; the cold test phase alone is 7.0 s for the same reason.
-The saving is the 40 s of setup, not the test time.
+Speedup against the baseline: **10.67x at p50**, 10.55x at p95 (target for this
+phase: 10x). The warm run cannot get shorter than its slowest test, which
+takes about 4.4 s; everything else runs next to it.
 
-Verdicts in those 20 runs: 14 pass, 6 fail, 0 error. The failures are the
+Until 2026-10-04 the same benchmark gave 5321 ms / 5426 ms (8.89x): ExUnit runs
+the tests of one module serially, so the floor was the longest module (5.3 s).
+Cook now schedules below the module (see "Scheduling" below). The cold test
+phase is still 7.0 s, because plain `mix test` has the module as its floor.
+
+Settings tried on 2026-10-04, 8 full runs each (CLI wall time, p50):
+
+| split | units at once (`max_cases`) | units | p50 |
+| --- | --- | --- | --- |
+| off (whole modules, the old behaviour) | 8 | 14 | 5343 ms |
+| packed (default) | 8 | 15 | 4437 ms |
+| one unit per test | 8 | 44 | 4440 ms |
+| one unit per test | 16 | 44 | 4829 ms |
+| one unit per test | 44 | 44 | 5675 ms |
+
+More concurrency made the run slower, not faster: the slowest test itself takes
+longer when more tests share the one browser and the one app. No setting
+produced a failure other than the flaky test below.
+
+Verdicts in the 20 benchmark runs: 15 pass, 5 fail, 0 error. The failures are the
 sample app's deliberately flaky test (`delivery_estimate_test.exs:8`), reported
-once per failing run and not retried. In one run a second test
-(`product_management_test.exs:6`) also failed; it is not marked flaky.
+once per failing run and not retried. A second test
+(`product_management_test.exs:6`) is not marked flaky but fails now and then:
+once in the 39 runs recorded before test-level scheduling, and once in the 100
+full runs measured with it (in a `packed` run, where its module was not split).
 
 After the browser server or the app instance is killed, the next run waits for
 the pool to come back: `first_test_ms` was 0.85 s and 1.6 s in those cases.
@@ -157,6 +176,11 @@ the pool to come back: `first_test_ms` was 0.85 s and 1.6 s in those cases.
   failing call), `repro` (a `cook run` command), `duration_ms`, `dom_snapshot`
   (path to an HTML file under `artifacts/`), `console_errors`, `server_logs`
 
+- `scheduling`: `mode` (`packed`, `test`, `off`), `granularity` (`test` if a module was
+  split, else `module`), `units`, `split_modules`, and `unsplit`: modules Cook would
+  not split, each with a `reason`. `fallback` appears only if splitting failed and
+  the run used whole modules.
+
 Null or empty by default:
 
 - `error` is `null` unless `status` is `error`; then it has `reason` and `message`.
@@ -172,10 +196,40 @@ Null or empty by default:
 
 Artifacts of the last 20 runs are kept in `artifacts/` (git-ignored).
 
+## Scheduling
+
+ExUnit schedules modules, and runs the tests of one module one after another.
+Inside the warm instance Cook hands ExUnit "shards" instead: generic proxy
+modules that each expose some of a real module's tests. Callbacks, tags,
+`file:line` and results still belong to the real module, and a shard never
+shows up in the verdict or the stored results.
+
+- `packed` (default): a module is cut into as few shards as stay at or under
+  the slowest recorded test of the run, so only modules longer than that test
+  are split (one of 14 in the sample app). Without recorded durations a module
+  gets one shard per test.
+- `test`: one shard per test. `off`: whole modules.
+- Units start longest first by their last recorded durations, `max_cases` (8)
+  at a time.
+
+`COOK_SHARD=packed|test|off` and `COOK_MAX_CASES=N` on `bin/cook start` override
+the configuration in `config/config.exs`.
+
 ## Known limitations
 
-- Scheduling granularity is the test module. Tests inside a module run
-  serially, and longest-first ordering orders modules, not tests.
+- Test-level scheduling (since 2026-10-04) applies to `async: true` modules
+  only. A module stays whole, with its tests serial, if it is `async: false`,
+  uses `:group` or `:parameterize`, defines its own `setup_all` in the test
+  file, or is tagged `@moduletag cook_split: false`; so does every module in a
+  run that names tests by `file:line`.
+- Splitting relies on ExUnit internals (checked against Elixir 1.20.4, isolated
+  in `Cook.Agent.Shards`). If they do not behave as expected the run falls back
+  to whole modules and says so in `scheduling.fallback`.
+- In a split module, `setup_all` from a case template runs once per shard, not
+  once per module. With the Playwright case that is one more browser launch per
+  shard (under 10 ms here against the warm browser server).
+- A test killed at the cap is recorded with no duration, so the next run plans
+  it as unknown (its module is split per test) rather than as the longest.
 - One browser per app instance, one app instance per configured app, one run
   at a time per instance (further runs queue).
 - Code changes are hot-reloaded in the instance; changes to

@@ -2,9 +2,10 @@ defmodule Cook.Runs.Ordering do
   @moduledoc """
   Longest-first scheduling.
 
-  ExUnit starts test modules in the order it is given and runs the tests of one
-  module serially, so the unit that can be ordered is the module: modules are
-  sorted by the sum of their tests' last recorded durations, longest first.
+  The instance orders its scheduling units (single tests of split modules, whole
+  modules otherwise; see `Cook.Agent.Shards`) by the last recorded durations of
+  their tests, longest first. `test_durations/1` is what it gets for that;
+  `module_order/1` is the tie-break and the order of modules that stay whole.
   """
 
   @doc """
@@ -18,5 +19,20 @@ defmodule Cook.Runs.Ordering do
     |> Enum.map(fn {module, times} -> {module, Enum.sum(times)} end)
     |> Enum.sort_by(fn {module, total} -> {-total, module} end)
     |> Enum.map(fn {module, _total} -> module end)
+  end
+
+  @doc """
+  The same entries (which also carry `:name` and `:status`) as
+  `{module, test_name, ms}` tuples, the form that crosses to the instance.
+
+  A failed test recorded with 0 ms is left out, so it counts as unknown: ExUnit
+  reports no time for a test it killed at the cap, and that is the last test
+  that should be planned as the shortest.
+  """
+  def test_durations(durations) do
+    for %{module: module, name: name, duration_ms: ms} = entry <- durations,
+        not (ms == 0 and Map.get(entry, :status) == "failed") do
+      {module, name, ms}
+    end
   end
 end

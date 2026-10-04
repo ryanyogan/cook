@@ -12,6 +12,7 @@ defmodule Cook.Runs.Runner do
   require Logger
 
   alias Cook.Runs
+  alias Cook.Runs.Ordering
   alias Cook.Verdict
 
   @poll_ms 20
@@ -44,12 +45,15 @@ defmodule Cook.Runs.Runner do
         :ok ->
           wait_ms = System.monotonic_time(:millisecond) - request.received_at
 
+          durations = recent_durations(request.path)
+
           pool_opts =
             request.opts
             |> Keyword.drop([:ready_timeout_ms, :browser_server])
             |> Keyword.merge(
               tests: request.tests,
-              module_order: module_order(request.path),
+              module_order: Ordering.module_order(durations),
+              durations: Ordering.test_durations(durations),
               timeout_ms: cap_ms,
               artifacts_dir: artifacts_dir
             )
@@ -166,8 +170,8 @@ defmodule Cook.Runs.Runner do
 
   # Without history the pool keeps its own order. A broken database must not
   # break a run.
-  defp module_order(path) do
-    Runs.module_order(path)
+  defp recent_durations(path) do
+    Runs.recent_durations(path)
   rescue
     error ->
       Logger.warning("cook: could not read recorded durations: #{Exception.message(error)}")

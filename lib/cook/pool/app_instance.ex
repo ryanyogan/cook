@@ -21,7 +21,7 @@ defmodule Cook.Pool.AppInstance do
   alias Cook.Pool.OsProcess
 
   @ready_marker "COOK_INSTANCE_READY"
-  @agent_modules [Cook.Agent.Tracker, Cook.Agent, Cook.Agent.Formatter]
+  @agent_modules [Cook.Agent.Tracker, Cook.Agent.Shards, Cook.Agent, Cook.Agent.Formatter]
   @boot_timeout_ms 180_000
   @min_backoff_ms 1_000
   @max_backoff_ms 10_000

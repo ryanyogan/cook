@@ -85,7 +85,9 @@ Cook daemon (this Phoenix app, `cook start`)             Cook.Repo (runs, result
      runs them; this is how loaded modules are re-run without recompiling.
    - Async modules are taken from a FIFO queue, `max_cases` at a time, so list order =
      start order. Tests inside one module run serially: **scheduling granularity is the
-     module**, not the test. Longest-first means ordering modules by recorded total
+     module**, not the test. (Superseded 2026-10-04: `Cook.Agent.Shards` gives ExUnit proxy
+     modules that expose subsets of a module's tests, so async modules are scheduled
+     below the module; see `.handoff/test-level-scheduling.md`.) Longest-first means ordering modules by recorded total
      duration, descending.
    - Modules register themselves in `ExUnit.Server` when their file is loaded. Loading
      files outside a run therefore leaves them queued; clear that before an ordered run

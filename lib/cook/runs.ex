@@ -180,7 +180,13 @@ defmodule Cook.Runs do
         where: t.status in ["passed", "failed"],
         distinct: [t.module, t.name],
         order_by: [t.module, t.name, desc: t.id],
-        select: %{module: t.module, test_id: t.test_id, duration_ms: t.duration_ms}
+        select: %{
+          module: t.module,
+          name: t.name,
+          test_id: t.test_id,
+          status: t.status,
+          duration_ms: t.duration_ms
+        }
     )
   end
 

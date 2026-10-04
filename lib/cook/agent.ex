@@ -15,6 +15,7 @@ defmodule Cook.Agent do
   @compile {:no_warn_undefined,
             [ExUnit, ExUnit.Filters, Mix, Mix.Project, Mix.Task, Mix.Task.Compiler]}
 
+  alias Cook.Agent.Shards
   alias Cook.Agent.Tracker
 
   @state_key {__MODULE__, :state}
@@ -65,7 +66,9 @@ defmodule Cook.Agent do
     * `:tests` - list of `"file"`, `"file:line"` or `"dir"`; empty means everything loaded
     * `:module_order` - module names (strings) in the order they should start
     * `:timeout_ms` - per-test cap (default #{@default_timeout_ms})
-    * `:max_cases` - concurrent test modules
+    * `:max_cases` - concurrent scheduling units (shards or whole modules)
+    * `:shard` - `:packed` (default), `:test` or `:off`; see `Cook.Agent.Shards`
+    * `:durations` - `[{module_name, test_name, ms}]`, last recorded durations, for longest-first
     * `:seed` - ExUnit seed, default `0` (tests in a module run in file order)
     * `:reload_tests` - reload every test file, not only changed ones
     * `:artifacts_dir` - where failure artifacts of this run go (default: none collected)
@@ -242,10 +245,15 @@ defmodule Cook.Agent do
          load_ms = elapsed_ms(load_started),
          known = state.files |> Map.keys() |> Enum.sort(),
          {:ok, files, line_refs} <- select(Keyword.get(opts, :tests, []), known) do
-      modules =
-        files
-        |> Enum.flat_map(&state.files[&1].modules)
-        |> order_modules(Keyword.get(opts, :module_order, []))
+      order = Keyword.get(opts, :module_order, [])
+
+      # Shards of async modules, or the modules themselves if that cannot be done.
+      {modules, scheduling} =
+        for(file <- files, module <- state.files[file].modules, do: {module, file})
+        |> Shards.prepare(
+          Keyword.put(opts, :line_refs?, line_refs != []),
+          &order_modules(&1, order)
+        )
 
       seed = Keyword.get(opts, :seed, 0)
       report = modules |> execute_with_artifacts(line_refs, seed, opts, state)
@@ -256,7 +264,8 @@ defmodule Cook.Agent do
       {:ok,
        %{
          tests: report.tests,
-         module_failures: report.module_failures,
+         module_failures: Enum.uniq(report.module_failures),
+         scheduling: scheduling,
          counts: counts(report),
          seed: seed,
          compile: compile,

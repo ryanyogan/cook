@@ -26,6 +26,8 @@ defmodule Cook.PoolTest do
              module_order: [],
              timeout_ms: 7_000,
              max_cases: 3,
+             shard: :packed,
+             durations: [],
              seed: 0,
              reload_tests: false,
              artifacts_dir: nil,
@@ -39,6 +41,9 @@ defmodule Cook.PoolTest do
     assert opts[:timeout_ms] == 500
     assert opts[:max_cases] == 1
     assert opts[:seed] == 9
+
+    assert Pool.agent_opts([], shard: :off)[:shard] == :off
+    assert Pool.agent_opts([shard: :test], shard: :off)[:shard] == :test
   end
 
   test "shape/2 measures time to first test from the request, across both nodes" do

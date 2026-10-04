@@ -44,7 +44,11 @@ defmodule Cook.Pool do
     * `:module_order` - module names as strings (`"MyAppWeb.LoginTest"`); those
       modules start first, in this order
     * `:timeout_ms` - per-test cap, default from config (`:test_timeout_ms`)
-    * `:max_cases` - test modules running at once, default from config
+    * `:max_cases` - scheduling units (tests of split modules, whole modules otherwise)
+      running at once, default from config
+    * `:shard` - how `async: true` modules are split so their tests run concurrently:
+      `:packed` (default), `:test` or `:off`; see `Cook.Agent.Shards`
+    * `:durations` - `[{module_name, test_name, ms}]`, last recorded durations
     * `:seed` - ExUnit seed, default `0` (no shuffling)
     * `:reload_tests` - reload all test files instead of only changed ones
     * `:artifacts_dir` - absolute directory for this run's failure artifacts; failed
@@ -113,6 +117,8 @@ defmodule Cook.Pool do
       module_order: Keyword.get(opts, :module_order, []),
       timeout_ms: opts[:timeout_ms] || Keyword.get(config, :test_timeout_ms, 10_000),
       max_cases: opts[:max_cases] || Keyword.get(config, :max_cases, 8),
+      shard: opts[:shard] || Keyword.get(config, :shard, :packed),
+      durations: Keyword.get(opts, :durations, []),
       seed: Keyword.get(opts, :seed, 0),
       reload_tests: Keyword.get(opts, :reload_tests, false),
       artifacts_dir: Keyword.get(opts, :artifacts_dir),
@@ -157,6 +163,7 @@ defmodule Cook.Pool do
       seed: report.seed,
       tests: report.tests,
       module_failures: report.module_failures,
+      scheduling: Map.get(report, :scheduling),
       counts: report.counts,
       known_tests: report.known_tests,
       known_test_count: Map.get(report, :known_test_count),

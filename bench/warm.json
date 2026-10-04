@@ -9,69 +9,73 @@
     "runs": 20,
     "verdicts": {
       "error": 0,
-      "fail": 6,
-      "pass": 14
+      "fail": 5,
+      "pass": 15
     },
     "wall_ms": {
       "count": 20,
-      "max": 5486,
-      "min": 5220,
+      "max": 4513,
+      "min": 4361,
       "missing": 0,
-      "p50": 5321,
-      "p95": 5426
+      "p50": 4433,
+      "p95": 4481
     },
     "duration_ms": {
       "count": 20,
-      "max": 5449,
-      "min": 5196,
+      "max": 4484,
+      "min": 4337,
       "missing": 0,
-      "p50": 5296,
-      "p95": 5400
+      "p50": 4410,
+      "p95": 4455
     },
     "first_test_ms": {
       "count": 20,
-      "max": 53,
-      "min": 23,
+      "max": 54,
+      "min": 44,
       "missing": 0,
-      "p50": 43,
+      "p50": 47,
       "p95": 52
     },
     "start_to_first_test_ms": {
       "count": 20,
-      "max": 77,
-      "min": 53,
+      "max": 78,
+      "min": 69,
       "missing": 0,
-      "p50": 68,
+      "p50": 72,
       "p95": 77
     },
     "baseline_total_ms": 47280,
-    "speedup_p50": 8.89,
-    "speedup_p95": 8.71
+    "speedup_p50": 10.67,
+    "speedup_p95": 10.55
   },
   "runs": [
     {
       "error": null,
-      "status": "pass",
+      "status": "fail",
       "run": 1,
       "selected": 44,
-      "exit_code": 0,
-      "wall_ms": 5486,
-      "duration_ms": 5449,
-      "first_test_ms": 23,
-      "failures": [],
-      "overhead_ms": 30
+      "exit_code": 1,
+      "wall_ms": 4513,
+      "duration_ms": 4484,
+      "first_test_ms": 47,
+      "failures": [
+        "test/features/delivery_estimate_test.exs:8"
+      ],
+      "overhead_ms": 52
     },
     {
       "error": null,
-      "status": "pass",
+      "status": "fail",
       "run": 2,
       "selected": 44,
-      "exit_code": 0,
-      "wall_ms": 5426,
-      "duration_ms": 5400,
-      "first_test_ms": 27,
-      "failures": [],
-      "overhead_ms": 31
+      "exit_code": 1,
+      "wall_ms": 4448,
+      "duration_ms": 4431,
+      "first_test_ms": 54,
+      "failures": [
+        "test/features/delivery_estimate_test.exs:8"
+      ],
+      "overhead_ms": 59
     },
     {
       "error": null,
@@ -79,26 +83,23 @@
       "run": 3,
       "selected": 44,
       "exit_code": 0,
-      "wall_ms": 5339,
-      "duration_ms": 5315,
-      "first_test_ms": 46,
+      "wall_ms": 4415,
+      "duration_ms": 4389,
+      "first_test_ms": 51,
       "failures": [],
-      "overhead_ms": 49
+      "overhead_ms": 57
     },
     {
       "error": null,
-      "status": "fail",
+      "status": "pass",
       "run": 4,
       "selected": 44,
-      "exit_code": 1,
-      "wall_ms": 5273,
-      "duration_ms": 5249,
-      "first_test_ms": 53,
-      "failures": [
-        "test/features/delivery_estimate_test.exs:8",
-        "test/features/product_management_test.exs:6"
-      ],
-      "overhead_ms": 56
+      "exit_code": 0,
+      "wall_ms": 4431,
+      "duration_ms": 4406,
+      "first_test_ms": 46,
+      "failures": [],
+      "overhead_ms": 52
     },
     {
       "error": null,
@@ -106,11 +107,11 @@
       "run": 5,
       "selected": 44,
       "exit_code": 0,
-      "wall_ms": 5373,
-      "duration_ms": 5347,
-      "first_test_ms": 42,
+      "wall_ms": 4361,
+      "duration_ms": 4337,
+      "first_test_ms": 45,
       "failures": [],
-      "overhead_ms": 44
+      "overhead_ms": 49
     },
     {
       "error": null,
@@ -118,11 +119,11 @@
       "run": 6,
       "selected": 44,
       "exit_code": 0,
-      "wall_ms": 5286,
-      "duration_ms": 5264,
-      "first_test_ms": 41,
+      "wall_ms": 4436,
+      "duration_ms": 4411,
+      "first_test_ms": 51,
       "failures": [],
-      "overhead_ms": 43
+      "overhead_ms": 55
     },
     {
       "error": null,
@@ -130,11 +131,11 @@
       "run": 7,
       "selected": 44,
       "exit_code": 0,
-      "wall_ms": 5281,
-      "duration_ms": 5257,
-      "first_test_ms": 43,
+      "wall_ms": 4451,
+      "duration_ms": 4423,
+      "first_test_ms": 50,
       "failures": [],
-      "overhead_ms": 45
+      "overhead_ms": 55
     },
     {
       "error": null,
@@ -142,11 +143,11 @@
       "run": 8,
       "selected": 44,
       "exit_code": 0,
-      "wall_ms": 5261,
-      "duration_ms": 5235,
-      "first_test_ms": 45,
+      "wall_ms": 4476,
+      "duration_ms": 4451,
+      "first_test_ms": 52,
       "failures": [],
-      "overhead_ms": 49
+      "overhead_ms": 58
     },
     {
       "error": null,
@@ -154,11 +155,11 @@
       "run": 9,
       "selected": 44,
       "exit_code": 0,
-      "wall_ms": 5355,
-      "duration_ms": 5330,
-      "first_test_ms": 45,
+      "wall_ms": 4401,
+      "duration_ms": 4377,
+      "first_test_ms": 49,
       "failures": [],
-      "overhead_ms": 49
+      "overhead_ms": 54
     },
     {
       "error": null,
@@ -166,39 +167,35 @@
       "run": 10,
       "selected": 44,
       "exit_code": 0,
-      "wall_ms": 5283,
-      "duration_ms": 5260,
-      "first_test_ms": 41,
+      "wall_ms": 4422,
+      "duration_ms": 4396,
+      "first_test_ms": 44,
       "failures": [],
-      "overhead_ms": 44
+      "overhead_ms": 50
     },
     {
       "error": null,
-      "status": "fail",
+      "status": "pass",
       "run": 11,
       "selected": 44,
-      "exit_code": 1,
-      "wall_ms": 5347,
-      "duration_ms": 5316,
-      "first_test_ms": 44,
-      "failures": [
-        "test/features/delivery_estimate_test.exs:8"
-      ],
-      "overhead_ms": 47
+      "exit_code": 0,
+      "wall_ms": 4432,
+      "duration_ms": 4409,
+      "first_test_ms": 46,
+      "failures": [],
+      "overhead_ms": 51
     },
     {
       "error": null,
-      "status": "fail",
+      "status": "pass",
       "run": 12,
       "selected": 44,
-      "exit_code": 1,
-      "wall_ms": 5291,
-      "duration_ms": 5261,
-      "first_test_ms": 44,
-      "failures": [
-        "test/features/delivery_estimate_test.exs:8"
-      ],
-      "overhead_ms": 48
+      "exit_code": 0,
+      "wall_ms": 4465,
+      "duration_ms": 4441,
+      "first_test_ms": 52,
+      "failures": [],
+      "overhead_ms": 57
     },
     {
       "error": null,
@@ -206,49 +203,51 @@
       "run": 13,
       "selected": 44,
       "exit_code": 0,
-      "wall_ms": 5220,
-      "duration_ms": 5196,
-      "first_test_ms": 43,
+      "wall_ms": 4476,
+      "duration_ms": 4452,
+      "first_test_ms": 47,
       "failures": [],
-      "overhead_ms": 46
-    },
-    {
-      "error": null,
-      "status": "pass",
-      "run": 14,
-      "selected": 44,
-      "exit_code": 0,
-      "wall_ms": 5292,
-      "duration_ms": 5268,
-      "first_test_ms": 45,
-      "failures": [],
-      "overhead_ms": 47
+      "overhead_ms": 52
     },
     {
       "error": null,
       "status": "fail",
-      "run": 15,
+      "run": 14,
       "selected": 44,
       "exit_code": 1,
-      "wall_ms": 5392,
-      "duration_ms": 5367,
-      "first_test_ms": 52,
+      "wall_ms": 4481,
+      "duration_ms": 4455,
+      "first_test_ms": 47,
       "failures": [
         "test/features/delivery_estimate_test.exs:8"
       ],
-      "overhead_ms": 55
+      "overhead_ms": 51
     },
     {
       "error": null,
       "status": "pass",
-      "run": 16,
+      "run": 15,
       "selected": 44,
       "exit_code": 0,
-      "wall_ms": 5321,
-      "duration_ms": 5297,
-      "first_test_ms": 43,
+      "wall_ms": 4438,
+      "duration_ms": 4415,
+      "first_test_ms": 49,
       "failures": [],
-      "overhead_ms": 46
+      "overhead_ms": 55
+    },
+    {
+      "error": null,
+      "status": "fail",
+      "run": 16,
+      "selected": 44,
+      "exit_code": 1,
+      "wall_ms": 4457,
+      "duration_ms": 4432,
+      "first_test_ms": 44,
+      "failures": [
+        "test/features/delivery_estimate_test.exs:8"
+      ],
+      "overhead_ms": 49
     },
     {
       "error": null,
@@ -256,51 +255,49 @@
       "run": 17,
       "selected": 44,
       "exit_code": 0,
-      "wall_ms": 5328,
-      "duration_ms": 5296,
-      "first_test_ms": 39,
+      "wall_ms": 4406,
+      "duration_ms": 4381,
+      "first_test_ms": 47,
       "failures": [],
-      "overhead_ms": 45
-    },
-    {
-      "error": null,
-      "status": "fail",
-      "run": 18,
-      "selected": 44,
-      "exit_code": 1,
-      "wall_ms": 5290,
-      "duration_ms": 5264,
-      "first_test_ms": 46,
-      "failures": [
-        "test/features/delivery_estimate_test.exs:8"
-      ],
-      "overhead_ms": 48
-    },
-    {
-      "error": null,
-      "status": "fail",
-      "run": 19,
-      "selected": 44,
-      "exit_code": 1,
-      "wall_ms": 5346,
-      "duration_ms": 5321,
-      "first_test_ms": 42,
-      "failures": [
-        "test/features/delivery_estimate_test.exs:8"
-      ],
-      "overhead_ms": 47
+      "overhead_ms": 52
     },
     {
       "error": null,
       "status": "pass",
-      "run": 20,
+      "run": 18,
       "selected": 44,
       "exit_code": 0,
-      "wall_ms": 5325,
-      "duration_ms": 5300,
-      "first_test_ms": 43,
+      "wall_ms": 4433,
+      "duration_ms": 4410,
+      "first_test_ms": 48,
       "failures": [],
-      "overhead_ms": 47
+      "overhead_ms": 53
+    },
+    {
+      "error": null,
+      "status": "pass",
+      "run": 19,
+      "selected": 44,
+      "exit_code": 0,
+      "wall_ms": 4412,
+      "duration_ms": 4388,
+      "first_test_ms": 48,
+      "failures": [],
+      "overhead_ms": 52
+    },
+    {
+      "error": null,
+      "status": "fail",
+      "run": 20,
+      "selected": 44,
+      "exit_code": 1,
+      "wall_ms": 4405,
+      "duration_ms": 4380,
+      "first_test_ms": 47,
+      "failures": [
+        "test/features/delivery_estimate_test.exs:8"
+      ],
+      "overhead_ms": 51
     }
   ],
   "baseline": {
@@ -308,7 +305,7 @@
     "recorded_at": "2026-10-04T16:28:46Z",
     "total_ms": 47280
   },
-  "recorded_at": "2026-10-04T16:31:40Z",
+  "recorded_at": "2026-10-04T16:58:15Z",
   "percentile_method": "nearest rank, over runs with a pass or fail verdict",
   "schema": "cook.bench/1"
 }

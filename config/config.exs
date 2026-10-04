@@ -12,7 +12,10 @@ config :cook,
   generators: [timestamp_type: :utc_datetime]
 
 # The warm pool: one Playwright browser server plus one warm instance per target app.
-# `test_timeout_ms` is the hard per-test cap.
+# `test_timeout_ms` is the hard per-test cap. `max_cases` is how many scheduling units
+# run at once; `shard` is how `async: true` modules are cut into units (`:packed`: as few
+# shards per module as stay under the slowest test, `:test`: one per test, `:off`: whole
+# modules). Measured 2026-10-04 on the sample app: 8 beat 16 and 44 (see .handoff/test-level-scheduling.md).
 config :cook, Cook.Pool,
   enabled: true,
   browser_server: [host: "127.0.0.1", port: 4041],
@@ -21,6 +24,7 @@ config :cook, Cook.Pool,
   ],
   test_timeout_ms: 10_000,
   max_cases: 8,
+  shard: :packed,
   trace: false
 
 # Runs: where failure artifacts go (absolute paths end up in the verdict) and

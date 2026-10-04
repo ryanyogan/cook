@@ -80,7 +80,8 @@ defmodule Cook.Verdict do
       failures: failures,
       quarantined: [],
       error: nil,
-      seed: raw[:seed]
+      seed: raw[:seed],
+      scheduling: raw[:scheduling]
     }
   end
 
