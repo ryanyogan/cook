@@ -107,9 +107,24 @@ cmd_start() {
   mkdir -p tmp
   rm -f tmp/cook.pid
   COOK_PIDFILE="$root/tmp/cook.pid" nohup mix phx.server >tmp/cook.log 2>&1 </dev/null &
+  local daemon=$!
 
+  # Give up as soon as waiting cannot help: the daemon exited, or the app
+  # instance failed to boot three times in a row (it keeps retrying, the cause
+  # is in the log). Otherwise wait for readiness up to COOK_START_TIMEOUT.
   local deadline=$((SECONDS + ${COOK_START_TIMEOUT:-180}))
   until ready; do
+    if ! kill -0 "$daemon" 2>/dev/null; then
+      echo "cook: the daemon exited while starting; last output ($root/tmp/cook.log):" >&2
+      tail -n 15 tmp/cook.log >&2
+      exit 2
+    fi
+    if [ "$(grep -c 'Cook instance for .* is down (' tmp/cook.log)" -ge 3 ]; then
+      echo "cook: the app instance keeps failing to boot; the daemon is still running and retrying." >&2
+      echo "cook: $(grep -o 'Cook instance for .* is down (.*), rebooting' tmp/cook.log | tail -n 1 | sed 's/, rebooting$//')" >&2
+      echo "cook: see $root/tmp/cook.log, then \`bin/cook stop\`" >&2
+      exit 2
+    fi
     if [ "$SECONDS" -ge "$deadline" ]; then
       echo "cook: the daemon did not become ready; see $root/tmp/cook.log" >&2
       exit 2

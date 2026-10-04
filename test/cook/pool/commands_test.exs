@@ -120,6 +120,30 @@ defmodule Cook.Pool.CommandsTest do
       assert Distribution.host(:cook_1@box) == "box"
       assert Distribution.sibling("cook_app_x", :cook_1@box) == :cook_app_x@box
     end
+
+    # `erl` reads an argument that starts with "-" or "+" as a flag, so such a
+    # cookie never reaches the instance and it cannot be connected to.
+    test "random_cookie/0 can always be passed on a command line" do
+      cookies = for _ <- 1..2_000, do: Distribution.random_cookie()
+
+      assert Enum.all?(cookies, &Distribution.cookie_usable?/1)
+      assert Enum.all?(cookies, &(Atom.to_string(&1) =~ ~r/^[0-9a-f]{32}$/))
+      assert length(Enum.uniq(cookies)) == 2_000
+    end
+
+    test "cookie_usable?/1 rejects cookies erl would take for a flag" do
+      assert Distribution.cookie_usable?(:secret)
+      assert Distribution.cookie_usable?(:"a-b+c_d")
+      refute Distribution.cookie_usable?(:"-AbCdEf_123")
+      refute Distribution.cookie_usable?(:"+AbCdEf_123")
+      refute Distribution.cookie_usable?(:"")
+    end
+
+    test "check_cookie/1 names the problem" do
+      assert Distribution.check_cookie(:secret) == :ok
+      assert {:error, {:unusable_cookie, message}} = Distribution.check_cookie(:"-x")
+      assert message =~ "starts with"
+    end
   end
 
   describe "Supervisor.instance_specs/2" do

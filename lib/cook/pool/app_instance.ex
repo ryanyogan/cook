@@ -9,7 +9,9 @@ defmodule Cook.Pool.AppInstance do
 
   If the OS process exits, the node disconnects or boot fails (for example the
   app does not compile right now), the instance is torn down and booted again
-  after a short backoff; the GenServer itself stays up. The OS process dies with
+  after a short backoff; the GenServer itself stays up. The reason is logged and
+  kept in the status as `{:down, reason}`; `{:boot_failed, {:node_connect_failed, node}}`
+  means the instance booted but refused the connection. The OS process dies with
   this GenServer through `Cook.Pool.OsProcess`.
   """
 
@@ -267,15 +269,25 @@ defmodule Cook.Pool.AppInstance do
     spawn_link(fn ->
       result =
         try do
-          true = Node.connect(node)
-          inject(node)
-          :erpc.call(node, Cook.Agent, :boot, [boot_opts], @boot_timeout_ms)
+          with :ok <- connect(node) do
+            inject(node)
+            :erpc.call(node, Cook.Agent, :boot, [boot_opts], @boot_timeout_ms)
+          end
         catch
           kind, reason -> {:error, {kind, reason}}
         end
 
       send(server, {:attached, generation, result})
     end)
+  end
+
+  # The instance printed its ready marker, so its node is up and registered.
+  # A refused connection at this point is not a matter of timing: the cookies
+  # differ (see `Cook.Pool.Distribution`) or the host name does not resolve.
+  defp connect(node) do
+    with :ok <- Distribution.check_cookie(Node.get_cookie()) do
+      if Node.connect(node) == true, do: :ok, else: {:error, {:node_connect_failed, node}}
+    end
   end
 
   defp inject(node) do
