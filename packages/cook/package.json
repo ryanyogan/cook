@@ -1,0 +1,27 @@
+{
+  "name": "cook",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "lint": "biome check .",
+    "format": "biome check --write .",
+    "test": "vitest run",
+    "check": "npm run typecheck && npm run lint && npm run test",
+    "suite": "node scripts/run-suite.ts"
+  },
+  "dependencies": {
+    "@effect/platform-node": "4.0.0",
+    "effect": "4.0.0"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.15",
+    "@types/node": "26.6.4",
+    "typescript": "7.0.2",
+    "vitest": "5.0.3"
+  }
+}
