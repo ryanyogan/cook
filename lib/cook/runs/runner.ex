@@ -7,6 +7,13 @@ defmodule Cook.Runs.Runner do
   server while the pool runs the tests. If the browser server or the app
   instance dies, the run is abandoned and the verdict is an `error`. Nothing is
   retried.
+
+  Tests fail within milliseconds once the browser is gone, so a run can return
+  an ordinary result full of failures before the browser server's exit reaches
+  anyone. The monitor alone is therefore not enough: when the run ends, the
+  pool is asked again and `classify/3` compares it with what the run started
+  with. A result only counts if the same browser server and the same instance
+  are still there.
   """
 
   require Logger
@@ -42,7 +49,8 @@ defmodule Cook.Runs.Runner do
 
     {result, wait_ms} =
       case await_pool(pool, request.path, started + ready_timeout) do
-        :ok ->
+        {:ok, status} ->
+          before = identity(status, request.path)
           wait_ms = System.monotonic_time(:millisecond) - request.received_at
 
           durations = recent_durations(request.path)
@@ -58,7 +66,8 @@ defmodule Cook.Runs.Runner do
               artifacts_dir: artifacts_dir
             )
 
-          {watched_run(pool, request.path, pool_opts, browser_server(request.opts)), wait_ms}
+          result = watched_run(pool, request.path, pool_opts, browser_server(request.opts))
+          {settle(result, before, pool, request.path), wait_ms}
 
         {:error, _reason} = error ->
           {error, System.monotonic_time(:millisecond) - request.received_at}
@@ -97,6 +106,9 @@ defmodule Cook.Runs.Runner do
   @doc """
   Whether a pool status says the pool can run tests of `path` right now.
   Returns `:ready`, `:wait` or `{:error, reason}` when waiting cannot help.
+
+  A browser server whose port stopped accepting has died without its exit
+  having been noticed yet; the pool is about to restart it, so that is `:wait`.
   """
   def readiness(%{running: false}, _path), do: {:error, :pool_not_running}
 
@@ -104,11 +116,86 @@ defmodule Cook.Runs.Runner do
     instance = Enum.find(instances, &(&1[:path] == path))
 
     cond do
-      instance == nil -> {:error, {:unknown_app, path}}
-      match?(%{status: :ready}, status[:browser_server]) and instance.status == :ready -> :ready
-      true -> :wait
+      instance == nil ->
+        {:error, {:unknown_app, path}}
+
+      status[:browser_server] != nil and up?(status.browser_server) and instance.status == :ready ->
+        :ready
+
+      true ->
+        :wait
     end
   end
+
+  @doc """
+  What identifies the browser server and the instance of `path` in a pool
+  status: plain data, compared by `classify/3` before and after a run.
+  """
+  def identity(status, path) do
+    browser = status[:browser_server]
+    instance = Enum.find(status[:instances] || [], &(&1[:path] == path))
+
+    %{
+      browser_server:
+        browser && %{pid: browser[:pid], os_pid: browser[:os_pid], up: up?(browser)},
+      instance:
+        instance &&
+          %{
+            pid: instance[:pid],
+            node: instance[:node],
+            generation: instance[:generation],
+            up: instance[:status] == :ready
+          }
+    }
+  end
+
+  defp up?(browser), do: browser[:status] == :ready and browser[:accepting] != false
+
+  @doc """
+  Decides whether a pool result may stand, from the identities (`identity/2`)
+  taken when the run started and when it ended. It does not depend on which
+  message reached the runner first.
+
+    * The browser server is gone, replaced or no longer accepting: the result
+      becomes `{:error, {:browser_server_down, why}}`. This also replaces
+      `:instance_down`, because the instances restart with the browser server.
+    * The instance is gone, replaced or not ready: a result with tests becomes
+      `{:error, {:instance_down, why}}`.
+    * Other errors (bad paths, compile errors, ...) are kept as they are.
+  """
+  def classify({:error, {:browser_server_down, _reason}} = result, _before, _after), do: result
+
+  def classify(result, before, after_run) do
+    browser = changed(before.browser_server, after_run.browser_server)
+    instance = changed(before.instance, after_run.instance)
+
+    case result do
+      {:ok, _raw} when browser != nil ->
+        {:error, {:browser_server_down, browser}}
+
+      {:error, {:instance_down, _}} when browser != nil ->
+        {:error, {:browser_server_down, browser}}
+
+      {:ok, _raw} when instance != nil ->
+        {:error, {:instance_down, instance}}
+
+      result ->
+        result
+    end
+  end
+
+  # The monitor already said so; no need to ask a pool that is restarting.
+  defp settle({:error, {:browser_server_down, _reason}} = result, _before, _pool, _path),
+    do: result
+
+  defp settle(result, before, pool, path),
+    do: classify(result, before, identity(pool.status(), path))
+
+  defp changed(_before, nil), do: :gone_at_run_end
+  defp changed(_before, %{up: false}), do: :not_up_at_run_end
+  defp changed(nil, _after), do: :not_up_at_run_start
+  defp changed(before, after_run) when before == after_run, do: nil
+  defp changed(_before, _after), do: :restarted_during_run
 
   # A run that arrives while the pool is restarting waits here, bounded.
   defp await_pool(pool, path, deadline) do
@@ -116,7 +203,7 @@ defmodule Cook.Runs.Runner do
 
     case readiness(status, path) do
       :ready ->
-        :ok
+        {:ok, status}
 
       {:error, _reason} = error ->
         error

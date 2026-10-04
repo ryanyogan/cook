@@ -51,6 +51,7 @@ defmodule Cook.Pool.AppInstance do
 
   @doc """
   Current state without waiting: `%{status: status, node: node, ...}`.
+  `pid` and `generation` (one per boot of the app) identify the running instance.
   """
   def status(server), do: GenServer.call(server, :status)
 
@@ -139,6 +140,8 @@ defmodule Cook.Pool.AppInstance do
       status: state.status,
       path: state.path,
       node: state.node,
+      pid: self(),
+      generation: state.generation,
       http_port: state.http_port,
       boot: state.boot,
       log: state.log

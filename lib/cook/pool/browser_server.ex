@@ -52,7 +52,11 @@ defmodule Cook.Pool.BrowserServer do
   end
 
   @doc """
-  Returns `%{status: :ready, port: port, os_pid: pid}`.
+  Returns `%{status: :ready, port: port, os_pid: os_pid, pid: pid, accepting: boolean}`.
+
+  `pid` is this GenServer (a new one after every restart). `accepting` is a
+  fresh TCP probe of the server's port: it turns false the moment the Node
+  process is gone, before its exit has been reported to this process.
   """
   def status(server \\ __MODULE__), do: GenServer.call(server, :status)
 
@@ -89,7 +93,15 @@ defmodule Cook.Pool.BrowserServer do
         nil -> nil
       end
 
-    {:reply, %{status: :ready, port: state.tcp_port, os_pid: os_pid}, state}
+    reply = %{
+      status: :ready,
+      port: state.tcp_port,
+      os_pid: os_pid,
+      pid: self(),
+      accepting: accepting?(state.host, state.tcp_port)
+    }
+
+    {:reply, reply, state}
   end
 
   @impl true

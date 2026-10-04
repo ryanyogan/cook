@@ -11,10 +11,19 @@ defmodule Cook.PoolStub do
   def put(fun), do: Application.put_env(:cook, __MODULE__, fun)
   def default_path, do: @path
 
+  @doc """
+  Overrides fields of the browser server in `status/0`, e.g. `%{accepting: false}`.
+  """
+  def put_browser(fields), do: Application.put_env(:cook, :pool_stub_browser, fields)
+
   def status do
     %{
       running: true,
-      browser_server: %{status: :ready, port: 4041, os_pid: 1},
+      browser_server:
+        Map.merge(
+          %{status: :ready, port: 4041, os_pid: 1},
+          Application.get_env(:cook, :pool_stub_browser, %{})
+        ),
       instances: [%{path: @path, status: :ready, node: :stub@host, http_port: 4100}]
     }
   end

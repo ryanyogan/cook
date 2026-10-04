@@ -71,6 +71,9 @@ defmodule Cook.RunsTest do
     assert Runner.readiness(status, @path) == :ready
     assert Runner.readiness(%{status | browser_server: nil}, @path) == :wait
 
+    dead = put_in(status.browser_server[:accepting], false)
+    assert Runner.readiness(dead, @path) == :wait
+
     assert Runner.readiness(%{status | instances: [%{path: @path, status: :booting}]}, @path) ==
              :wait
 
@@ -117,6 +120,104 @@ defmodule Cook.RunsTest do
     assert verdict.status == "error"
     assert verdict.error.reason == "browser_server_down"
     assert [%{status: "error", error: "browser_server_down"} | _older] = Runs.recent(1)
+  end
+
+  describe "classify/3: a result only counts if the pool is the one the run started with" do
+    @browser %{pid: :browser_1, os_pid: 10, up: true}
+    @instance %{pid: :instance_1, node: :a@host, generation: 1, up: true}
+    @same %{browser_server: @browser, instance: @instance}
+    @failed {:ok, %{counts: %{total: 44, failed: 34}}}
+
+    test "an unchanged pool keeps the result, failures and errors alike" do
+      assert Runner.classify(@failed, @same, @same) == @failed
+
+      for error <- [{:error, {:instance_down, :noconnection}}, {:error, {:unknown_tests, ["x"]}}] do
+        assert Runner.classify(error, @same, @same) == error
+      end
+    end
+
+    test "a browser server that is gone, replaced or not accepting makes the run an error" do
+      for {browser, why} <- [
+            {nil, :gone_at_run_end},
+            {%{@browser | up: false}, :not_up_at_run_end},
+            {%{@browser | pid: :browser_2, os_pid: 11}, :restarted_during_run}
+          ],
+          result <- [@failed, {:ok, %{counts: %{total: 44, failed: 0}}}] do
+        after_run = %{@same | browser_server: browser}
+
+        assert Runner.classify(result, @same, after_run) ==
+                 {:error, {:browser_server_down, why}}
+      end
+    end
+
+    test "the instances restart with the browser server: the browser server is the reason" do
+      after_run = %{browser_server: %{@browser | pid: :browser_2}, instance: nil}
+
+      for result <- [@failed, {:error, {:instance_down, :noconnection}}] do
+        assert Runner.classify(result, @same, after_run) ==
+                 {:error, {:browser_server_down, :restarted_during_run}}
+      end
+
+      assert Runner.classify({:error, {:unknown_tests, ["x"]}}, @same, after_run) ==
+               {:error, {:unknown_tests, ["x"]}}
+    end
+
+    test "an instance that is gone, rebooting or rebooted makes the run an error" do
+      for {instance, why} <- [
+            {nil, :gone_at_run_end},
+            {%{@instance | up: false}, :not_up_at_run_end},
+            {%{@instance | generation: 2, node: :b@host}, :restarted_during_run}
+          ] do
+        assert Runner.classify(@failed, @same, %{@same | instance: instance}) ==
+                 {:error, {:instance_down, why}}
+      end
+    end
+
+    test "what the monitor reported is kept" do
+      down = {:error, {:browser_server_down, :killed}}
+      assert Runner.classify(down, @same, %{browser_server: nil, instance: nil}) == down
+    end
+
+    test "identity/2 reads a pool status; a dead port means not up" do
+      status = %{
+        running: true,
+        browser_server: %{
+          status: :ready,
+          port: 4041,
+          os_pid: 10,
+          pid: :browser_1,
+          accepting: true
+        },
+        instances: [
+          %{path: @path, status: :ready, node: :a@host, pid: :instance_1, generation: 1}
+        ]
+      }
+
+      assert Runner.identity(status, @path) == @same
+
+      dead = put_in(status.browser_server.accepting, false)
+      assert Runner.identity(dead, @path).browser_server.up == false
+
+      booting = %{status | instances: [%{hd(status.instances) | status: :booting}]}
+      assert Runner.identity(booting, @path).instance.up == false
+
+      assert Runner.identity(%{running: false, browser_server: nil, instances: []}, @path) ==
+               %{browser_server: nil, instance: nil}
+    end
+  end
+
+  test "failures from a run whose browser server died unnoticed are an error verdict" do
+    PoolStub.put(fn _path, _opts ->
+      # The Node process is dead, its GenServer has not heard yet: no DOWN arrives.
+      PoolStub.put_browser(%{accepting: false})
+      {:ok, PoolStub.raw([{"test/a_test.exs:3", :failed, 40}])}
+    end)
+
+    verdict = Runs.run()
+    assert {verdict.status, verdict.error.reason} == {"error", "browser_server_down"}
+    assert verdict.failures == []
+  after
+    PoolStub.put_browser(%{})
   end
 
   test "a pool error and a pool that never gets ready are error verdicts" do
