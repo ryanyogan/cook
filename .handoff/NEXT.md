@@ -26,6 +26,26 @@ are `ts-pool`, `ts-runs`, `ts-bench`, with `cloudflare-spike` in parallel. Check
 - The spec `docs/cook-spec.md` is git-ignored and private (never commit it or quote its
   Chromatic section). It predates the direction change and is Phoenix-first.
 
+## Progress and plan (updated 2026-10-04, evening)
+- Done and pushed (`main` at `3b54a72`, CI green incl. the new `engine` job): `ts-pool`,
+  `ts-runs`, `cloudflare-spike`, `speed-profile`.
+- Key finding (`speed-profile.md`): warmth alone saves nothing on the fixture (about 11 s).
+  Production build + slow tests first + tracing off + 8 workers gives 4.5 s; the floor
+  (three slow tests) is 4.3 s.
+- Cloudflare (`cloudflare-spike.md`): works in one 4 vCPU container, about 30 s warm for the
+  full suite with 4 workers (workstation at 4 workers: about 15 s). PID 1 must handle SIGTERM.
+- Remaining stages, in order, one agent at a time so timings are clean:
+  1. `ts-order`: longest-first from stored durations; tracing off with a diagnostic rerun
+     of failures. (Started; check for `.handoff/ts-order.md`.)
+  2. `ts-build-mode`: optional per-project config giving build and serve commands, so Cook
+     keeps a production build warm and rebuilds when sources change. Measure the build cost.
+  3. `fixture-flakes`: `e2e/activity.spec.ts:22` and `e2e/reports.spec.ts:13` fail
+     sometimes under machine load; find the cause.
+  4. `ts-bench`: cold baseline for the React fixture, warm benchmark, CI e2e job for the
+     TypeScript engine, README rewrite around the new target.
+- Not yet decided with the owner: whether the diagnostic rerun is acceptable as the default
+  tracing policy; what happens to the Elixir engine at the repo root.
+
 ## Shelved (Phoenix-only; pick up only if the owner asks)
 - Unmarked flake `fixtures/sample_app/test/features/product_management_test.exs:6`, about
   1 failure per 100 full runs.
