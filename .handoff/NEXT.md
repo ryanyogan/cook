@@ -43,8 +43,9 @@ are `ts-pool`, `ts-runs`, `ts-bench`, with `cloudflare-spike` in parallel. Check
      sometimes under machine load; find the cause.
   4. `ts-bench`: cold baseline for the React fixture, warm benchmark, CI e2e job for the
      TypeScript engine, README rewrite around the new target.
-- Not yet decided with the owner: whether the diagnostic rerun is acceptable as the default
-  tracing policy; what happens to the Elixir engine at the repo root.
+- Decided by the owner 2026-10-04: tracing off with one diagnostic rerun of failures is the
+  default ("the rerun default is fine").
+- Not yet decided with the owner: what happens to the Elixir engine at the repo root.
 
 ## Shelved (Phoenix-only; pick up only if the owner asks)
 - Unmarked flake `fixtures/sample_app/test/features/product_management_test.exs:6`, about

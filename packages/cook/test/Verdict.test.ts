@@ -175,3 +175,37 @@ test("small pieces", () => {
     globalErrors({ ...report, errors: [{ message: "\u001b[31mError: No tests found\u001b[39m" }] }),
   ).toEqual(["Error: No tests found"])
 })
+
+test("the diagnostic rerun is its own timing figure and never changes status or counts", () => {
+  const rows = testRows(report)
+  const failedId = rows.find((r) => r.status === "failed")?.testId ?? ""
+  const plain = buildVerdict(input())
+  const withRerun = buildVerdict(
+    input({
+      durationMs: 2800 + 1500,
+      tracePolicy: "on-failure-rerun",
+      rerun: { ms: 1500, outcomes: new Map([[failedId, "passed"]]) },
+    }),
+  )
+  expect(withRerun.status).toBe("fail")
+  expect(withRerun.counts).toEqual(plain.counts)
+  expect(withRerun.failures).toHaveLength(1)
+  expect(withRerun.failures[0]?.diagnostic_rerun).toBe("passed")
+  expect(withRerun.timing.diagnostic_rerun_ms).toBe(1500)
+  // Overhead and test time are those of the deciding run.
+  expect(withRerun.timing.overhead_ms).toBe(plain.timing.overhead_ms)
+  expect(withRerun.timing.tests_ms).toBe(plain.timing.tests_ms)
+  expect(withRerun.trace).toBe("on-failure-rerun")
+  expect(summary(withRerun)).toContain(
+    "rerun: passed when run again with tracing on (the verdict stays failed)",
+  )
+  expect(summary(withRerun)).toContain("rerun for traces 1.5 s")
+  expect(plain.failures[0]?.diagnostic_rerun).toBe("not_run")
+  expect(plain.timing.diagnostic_rerun_ms).toBeNull()
+  expect(plain.trace).toBe("project")
+  expect(decodeVerdict(JSON.parse(JSON.stringify(withRerun)))).toEqual(withRerun)
+  // A verdict stored before these fields existed still decodes.
+  const { trace: _t, scheduling: _s, ...old } = plain
+  const { diagnostic_rerun_ms: _d, ...oldTiming } = plain.timing
+  expect(decodeVerdict({ ...old, timing: oldTiming, failures: [] }).status).toBe("fail")
+})

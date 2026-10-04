@@ -2,9 +2,15 @@ import { readFileSync } from "node:fs"
 import { Deferred, Effect, Fiber } from "effect"
 import { expect, test } from "vitest"
 import type { ServerSnapshot } from "../src/Classify.ts"
-import { type CoordinatorDeps, identities, makeCoordinator, type RanSuite } from "../src/Coordinator.ts"
+import {
+  type CoordinatorDeps,
+  identities,
+  makeCoordinator,
+  type RanSuite,
+  type RunRequest,
+} from "../src/Coordinator.ts"
 import { ProjectError } from "../src/errors.ts"
-import type { PlaywrightReport } from "../src/Runner.ts"
+import type { PlaywrightReport, RunOptions } from "../src/Runner.ts"
 import { openStore } from "../src/Store.ts"
 
 const failedReport = JSON.parse(
@@ -74,10 +80,16 @@ test("one run at a time per project path: the second waits, another path does no
         }),
       )
       const open = (name: string) => Deferred.succeed(gates.get(name) as Deferred.Deferred<void>, undefined)
-      const a1 = yield* Effect.forkChild(coordinator.run({ path: "/proj/a", files: ["a1"] }))
+      const a1 = yield* Effect.forkChild(
+        coordinator.run({ path: "/proj/a", files: ["a1"], trace: "project" }),
+      )
       yield* Effect.sleep("20 millis")
-      const a2 = yield* Effect.forkChild(coordinator.run({ path: "/proj/a", files: ["a2"] }))
-      const b1 = yield* Effect.forkChild(coordinator.run({ path: "/proj/b", files: ["b1"] }))
+      const a2 = yield* Effect.forkChild(
+        coordinator.run({ path: "/proj/a", files: ["a2"], trace: "project" }),
+      )
+      const b1 = yield* Effect.forkChild(
+        coordinator.run({ path: "/proj/b", files: ["b1"], trace: "project" }),
+      )
       yield* Effect.sleep("40 millis")
       // a2 has not started: a1 holds the project. b1 runs alongside.
       expect(order).toEqual(["start a1", "start b1"])
@@ -223,4 +235,149 @@ test("errors of the engine and a run that takes too long become error verdicts",
   const unexpected = await Effect.runPromise(broken.run({ path: "/proj/a" }))
   expect(unexpected.error?.reason).toBe("unexpected")
   expect(unexpected.error?.message).toContain("bug")
+})
+
+const passedReport = JSON.parse(
+  JSON.stringify(failedReport)
+    .replaceAll('"status":"unexpected"', '"status":"expected"')
+    .replaceAll('"status":"failed"', '"status":"passed"'),
+) as PlaywrightReport
+
+test("default trace policy: tracing off, then the failed tests once with tracing on; the first run is the verdict", async () => {
+  const store = openStore(":memory:")
+  const calls: Array<RunOptions> = []
+  const collected: Array<string> = []
+  const coordinator = makeCoordinator(
+    deps({
+      store,
+      run: (_spec, options) => {
+        calls.push(options)
+        // The first run fails one test; the rerun of that test passes.
+        return Effect.as(
+          Effect.sleep("15 millis"),
+          ran(calls.length === 1 ? {} : { report: passedReport, exitCode: 0 }),
+        )
+      },
+      collect: (rows, _dir, label = "") => {
+        collected.push(`${label}${rows.map((row) => row.tracePath !== null).join(",")}`)
+        return new Map(
+          rows.map((row) => [
+            row.testId,
+            label === ""
+              ? { trace: null, consoleErrors: null, domSnapshot: "/first/error-context.md" }
+              : { trace: "/rerun/trace.zip", consoleErrors: [], domSnapshot: "/rerun/error-context.md" },
+          ]),
+        )
+      },
+    }),
+  )
+  const verdict = await Effect.runPromise(coordinator.run({ path: "/proj/a" }))
+  expect(calls.map((c) => [c.trace, c.files, c.extraArgs])).toEqual([
+    ["off", [], undefined],
+    ["on", ["e2e/estimate.spec.ts:6"], ["--project=chromium"]],
+  ])
+  // Failed, and stays failed although the rerun passed. Reported once.
+  expect(verdict.status).toBe("fail")
+  expect(verdict.trace).toBe("on-failure-rerun")
+  expect(verdict.counts).toMatchObject({ passed: 2, failed: 1 })
+  expect(verdict.failures).toHaveLength(1)
+  expect(verdict.failures[0]).toMatchObject({
+    diagnostic_rerun: "passed",
+    trace: "/rerun/trace.zip",
+    console_errors: [],
+    dom_snapshot: "/first/error-context.md",
+  })
+  expect(verdict.timing.diagnostic_rerun_ms).toBeGreaterThanOrEqual(14)
+  expect(verdict.duration_ms).toBeGreaterThanOrEqual(28)
+  // Only the first run is stored as the tests' results.
+  expect(store.testResults(verdict.run_id).map((t) => t.status)).toEqual(["failed", "passed", "passed"])
+  expect(store.recent(5)).toHaveLength(1)
+  expect(collected).toHaveLength(2)
+})
+
+test("a rerun that fails again, breaks, or is over the limit", async () => {
+  const again = async (
+    second: Effect.Effect<RanSuite, ProjectError>,
+    over: Partial<CoordinatorDeps> = {},
+  ) => {
+    let calls = 0
+    const coordinator = makeCoordinator(
+      deps({ run: () => (++calls === 1 ? Effect.succeed(ran()) : second), ...over }),
+    )
+    const verdict = await Effect.runPromise(coordinator.run({ path: "/proj/a" }))
+    return { verdict, calls }
+  }
+  const failedAgain = await again(Effect.succeed(ran()))
+  expect(failedAgain.verdict.failures[0]?.diagnostic_rerun).toBe("failed")
+  const broke = await again(Effect.fail(new ProjectError({ path: "/proj/a", reason: "gone" })))
+  expect(broke.verdict.status).toBe("fail")
+  expect(broke.verdict.failures[0]?.diagnostic_rerun).toBe("not_run")
+  expect(broke.verdict.timing.diagnostic_rerun_ms).not.toBeNull()
+  const noReport = await again(Effect.succeed(ran({ report: null, exitCode: 130 })))
+  expect(noReport.verdict.failures[0]?.diagnostic_rerun).toBe("not_run")
+  const limited = await again(Effect.succeed(ran()), { rerunLimit: 0 })
+  expect(limited.calls).toBe(1)
+  expect(limited.verdict.failures[0]?.diagnostic_rerun).toBe("not_run")
+  expect(limited.verdict.timing.diagnostic_rerun_ms).toBeNull()
+})
+
+test("no rerun: policies project and off, a passing run, and a run that ended in an error", async () => {
+  const count = async (request: Partial<RunRequest>, over: Partial<CoordinatorDeps> = {}) => {
+    const calls: Array<RunOptions> = []
+    const coordinator = makeCoordinator(
+      deps({
+        run: (_spec, options) => {
+          calls.push(options)
+          return Effect.succeed(ran())
+        },
+        ...over,
+      }),
+    )
+    const verdict = await Effect.runPromise(coordinator.run({ path: "/proj/a", ...request }))
+    return { verdict, calls }
+  }
+  const project = await count({ trace: "project" })
+  expect(project.calls).toHaveLength(1)
+  expect("trace" in (project.calls[0] ?? {})).toBe(false)
+  expect(project.verdict.failures[0]?.diagnostic_rerun).toBe("not_run")
+  expect(project.verdict.timing.diagnostic_rerun_ms).toBeNull()
+  const off = await count({ trace: "off" })
+  expect(off.calls.map((c) => c.trace)).toEqual(["off"])
+  const passing = await count({}, { run: () => Effect.succeed(ran({ report: passedReport, exitCode: 0 })) })
+  expect(passing.verdict.status).toBe("pass")
+  expect(passing.verdict.timing.diagnostic_rerun_ms).toBeNull()
+  const dead = await count({}, { snapshot: () => Effect.succeed([]) })
+  expect(dead.verdict.status).toBe("error")
+  expect(dead.calls).toHaveLength(1)
+})
+
+test("longest-first: the run is given the store's recent durations; order project gives none", async () => {
+  const store = openStore(":memory:")
+  const calls: Array<RunOptions> = []
+  const coordinator = makeCoordinator(
+    deps({
+      store,
+      run: (_spec, options) => {
+        calls.push(options)
+        return Effect.succeed(
+          ran({ order: { applied: true, reason: null, estimated: 3, unknown: 0, moved: 2 } }),
+        )
+      },
+    }),
+  )
+  const first = await Effect.runPromise(coordinator.run({ path: "/proj/a", trace: "off" }))
+  expect(calls[0]?.durations?.size).toBe(0)
+  const second = await Effect.runPromise(coordinator.run({ path: "/proj/a", trace: "off" }))
+  expect(calls[1]?.durations?.size).toBe(3)
+  expect(second.scheduling).toEqual({
+    order: "longest-first",
+    applied: true,
+    reason: null,
+    estimated: 3,
+    unknown: 0,
+  })
+  expect(first.scheduling?.order).toBe("longest-first")
+  const plain = await Effect.runPromise(coordinator.run({ path: "/proj/a", trace: "off", order: "project" }))
+  expect(calls[2]?.durations).toBeUndefined()
+  expect(plain.scheduling).toMatchObject({ order: "project", reason: null })
 })

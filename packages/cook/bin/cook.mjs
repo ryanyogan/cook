@@ -8,6 +8,10 @@ const usage = `usage:
   cook start [--detach]                  start the daemon (in the foreground unless --detach)
   cook run [PATH] [TEST...] [--json]     run a project's Playwright suite; TEST is a file or file:line
            [--env KEY=VALUE]... [--timeout MS] [--workers N] [--config FILE]
+           [--trace on-failure-rerun|project|off]   default on-failure-rerun: tracing off, then the
+                                         failed tests once more with tracing on (never changes the
+                                         verdict); project: the project's own trace setting
+           [--order longest-first|project]          default longest-first, from recorded durations
   cook status [--json]                   daemon and pool status
   cook stop                              stop the daemon and everything it started
 environment: COOK_PORT (4050), COOK_HOME (~/.cook), COOK_START_TIMEOUT_MS (15000)
@@ -148,7 +152,17 @@ const commands = {
       } else if (arg === "--timeout") body.timeout_ms = Number(value())
       else if (arg === "--workers") body.workers = value()
       else if (arg === "--config") body.config = value()
-      else if (arg.startsWith("--")) fail(`unknown option ${arg}\n${usage}`)
+      else if (arg === "--trace") {
+        body.trace = value()
+        if (!["on-failure-rerun", "project", "off"].includes(body.trace)) {
+          fail(`--trace wants on-failure-rerun, project or off, got "${body.trace}"`)
+        }
+      } else if (arg === "--order") {
+        body.order = value()
+        if (!["longest-first", "project"].includes(body.order)) {
+          fail(`--order wants longest-first or project, got "${body.order}"`)
+        }
+      } else if (arg.startsWith("--")) fail(`unknown option ${arg}\n${usage}`)
       else if (
         body.path === undefined &&
         body.files.length === 0 &&

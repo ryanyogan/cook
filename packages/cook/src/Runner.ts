@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto"
-import { readFileSync } from "node:fs"
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { Context, Effect, Layer } from "effect"
@@ -24,6 +24,25 @@ export interface RunOptions {
   readonly workers?: number | string
   /** Further `playwright test` arguments, appended as given (for example `--grep`, `@tag`). */
   readonly extraArgs?: ReadonlyArray<string>
+  /** `--trace`. Default: the project's own setting. */
+  readonly trace?: "on" | "off"
+  /**
+   * Recorded milliseconds by Cook test id. When given (and not empty) the slowest work is queued
+   * first, through the reporter's `preprocess` hook (`assets/order.cjs`).
+   */
+  readonly durations?: ReadonlyMap<string, number>
+}
+
+/** What the ordering hook did, as the reporter recorded it. */
+export interface OrderOutcome {
+  readonly applied: boolean
+  /** Why nothing was reordered; null when it was. */
+  readonly reason: string | null
+  /** Selected tests with a recorded duration, and without one. */
+  readonly estimated: number
+  readonly unknown: number
+  /** Files and tests that are not at their original position among their siblings. */
+  readonly moved: number
 }
 
 /** The parts of Playwright's JSON report Cook names. The rest is passed through untouched. */
@@ -67,6 +86,8 @@ export interface RunResult {
   readonly timings: RunTimings
   readonly tests: number | null
   readonly workers: number | null
+  /** Null when no durations were given, or the installed Playwright has no `preprocess` hook. */
+  readonly order: OrderOutcome | null
   /** The command that was run, for the record. */
   readonly command: ReadonlyArray<string>
   readonly pool: {
@@ -91,6 +112,7 @@ interface Events {
   readonly endAt: number | null
   readonly tests: number | null
   readonly workers: number | null
+  readonly order: OrderOutcome | null
 }
 
 /** Arguments for the project's `playwright test`. Pure, so it is unit tested. */
@@ -102,6 +124,7 @@ export const runnerArgs = (config: string, options: RunOptions = {}): ReadonlyAr
   `--timeout=${options.testTimeoutMs ?? defaultTestTimeoutMs}`,
   `--reporter=${reporterScript},json`,
   ...(options.workers !== undefined ? [`--workers=${options.workers}`] : []),
+  ...(options.trace !== undefined ? [`--trace=${options.trace}`] : []),
   ...(options.extraArgs ?? []),
   ...(options.files ?? []),
 ]
@@ -150,6 +173,12 @@ export class Runner extends Context.Service<
             const reportFile = join(runDir, "report.json")
             const eventsFile = join(runDir, "events.json")
             const logFile = join(runDir, "output.log")
+            const orderFile = join(runDir, "order.json")
+            const ordered = options.durations !== undefined && options.durations.size > 0
+            if (ordered) {
+              mkdirSync(runDir, { recursive: true })
+              writeFileSync(orderFile, JSON.stringify(Object.fromEntries(options.durations ?? [])))
+            }
             const args = [project.playwrightCli, ...runnerArgs(web.config, options)]
             const spawnedAt = Date.now()
             const handle = yield* spawnGuarded(
@@ -166,6 +195,8 @@ export class Runner extends Context.Service<
                   PLAYWRIGHT_JSON_OUTPUT_NAME: reportFile,
                   PLAYWRIGHT_JSON_OUTPUT_FILE: reportFile,
                   COOK_EVENTS_FILE: eventsFile,
+                  // Always set, so a value inherited from the daemon's own environment cannot leak in.
+                  COOK_ORDER_FILE: ordered ? orderFile : "",
                 },
               },
               logFile,
@@ -184,6 +215,7 @@ export class Runner extends Context.Service<
               timings: timingsFrom({ calledAt, spawnedAt, exitedAt }, events, Date.now()),
               tests: events?.tests ?? null,
               workers: events?.workers ?? null,
+              order: events?.order ?? null,
               command: [process.execPath, ...args],
               pool: { cold: browser.cold || web.cold, browserServer: browser.ready, webServers: web.servers },
             } satisfies RunResult

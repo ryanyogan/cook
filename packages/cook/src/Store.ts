@@ -71,8 +71,20 @@ export interface Store {
   readonly testResults: (runId: string) => ReadonlyArray<StoredTestResult>
   /** Number of tests in the project's latest full run that ended as pass or fail; null if none. */
   readonly knownTests: (projectPath: string) => number | null
+  /**
+   * Typical duration of each test of a project, by test id: the median of its last `perTest`
+   * (default 5) results that ran to an end (passed, failed or stopped at the cap) in runs that
+   * were not errors. A test that has only ever been skipped by its file counts with what the skip
+   * took, so that it is not treated as new on every run. Diagnostic reruns are never stored, so
+   * they are not in here.
+   */
+  readonly recentDurations: (projectPath: string, perTest?: number) => ReadonlyMap<string, number>
   readonly close: () => void
 }
+
+/** Median of an ascending list; the lower middle for an even count. */
+export const medianOf = (ascending: ReadonlyArray<number>): number =>
+  ascending[Math.floor((ascending.length - 1) / 2)] ?? 0
 
 /** Opens (and migrates) the SQLite database. `:memory:` gives a private one for tests. */
 export const openStore = (file: string): Store => {
@@ -163,6 +175,35 @@ export const openStore = (file: string): Store => {
         )
         .get(projectPath) as { selected: number } | undefined
       return row === undefined ? null : Number(row.selected)
+    },
+    recentDurations: (projectPath, perTest = 5) => {
+      const rows = db
+        .prepare(
+          `SELECT test_id, duration_ms, skipped FROM (
+             SELECT t.test_id, t.duration_ms, t.status = 'skipped' AS skipped,
+                    ROW_NUMBER() OVER (PARTITION BY t.test_id, t.status = 'skipped' ORDER BY t.id DESC) AS recency
+             FROM test_results t JOIN runs r ON r.id = t.run_id
+             WHERE t.project_path = ? AND r.status != 'error'
+               AND t.status IN ('passed', 'failed', 'timed_out', 'skipped'))
+           WHERE recency <= ? ORDER BY test_id, duration_ms`,
+        )
+        .all(projectPath, perTest) as unknown as ReadonlyArray<{
+        test_id: string
+        duration_ms: number
+        skipped: number
+      }>
+      const finished = new Map<string, Array<number>>()
+      const skipped = new Map<string, Array<number>>()
+      for (const row of rows) {
+        const into = Number(row.skipped) === 1 ? skipped : finished
+        const list = into.get(row.test_id) ?? []
+        list.push(Number(row.duration_ms))
+        into.set(row.test_id, list)
+      }
+      const medians = new Map<string, number>()
+      for (const [id, list] of skipped) medians.set(id, medianOf(list))
+      for (const [id, list] of finished) medians.set(id, medianOf(list))
+      return medians
     },
     close: () => db.close(),
   }

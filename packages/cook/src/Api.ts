@@ -1,6 +1,7 @@
 import { Effect, Schema } from "effect"
 import { HttpRouter, type HttpServerRequest, HttpServerResponse } from "effect/http"
 import { Coordinator, type RunRequest } from "./Coordinator.ts"
+import { orderPolicies, tracePolicies } from "./Diagnostic.ts"
 import { cookHome } from "./os.ts"
 import { StoreService } from "./StoreService.ts"
 import { encodeVerdict, exitCode, summary, Verdict } from "./Verdict.ts"
@@ -16,6 +17,10 @@ export const RunBody = Schema.Struct({
   env: Schema.optionalKey(Schema.Record(Schema.String, Schema.String)),
   config: Schema.optionalKey(Schema.String),
   client_started_ms: Schema.optionalKey(Schema.Number),
+  /** `on-failure-rerun` (default), `project` or `off`. */
+  trace: Schema.optionalKey(Schema.Literals(tracePolicies)),
+  /** `longest-first` (default) or `project`. */
+  order: Schema.optionalKey(Schema.Literals(orderPolicies)),
 })
 const decodeRunBody = Schema.decodeUnknownEffect(RunBody)
 const decodeStoredVerdict = Schema.decodeUnknownEffect(Verdict)
@@ -28,6 +33,8 @@ export const toRunRequest = (body: typeof RunBody.Type): RunRequest => ({
   ...(body.env !== undefined ? { env: body.env } : {}),
   ...(body.config !== undefined ? { config: body.config } : {}),
   ...(body.client_started_ms !== undefined ? { clientStartedMs: body.client_started_ms } : {}),
+  ...(body.trace !== undefined ? { trace: body.trace } : {}),
+  ...(body.order !== undefined ? { order: body.order } : {}),
 })
 
 const query = (request: HttpServerRequest.HttpServerRequest) =>

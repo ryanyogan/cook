@@ -1,6 +1,13 @@
 import { Schema } from "effect"
+import {
+  type OrderPolicy,
+  orderPolicies,
+  type RerunOutcome,
+  type TracePolicy,
+  tracePolicies,
+} from "./Diagnostic.ts"
 import type { TestRow } from "./Report.ts"
-import type { RunTimings } from "./Runner.ts"
+import type { OrderOutcome, RunTimings } from "./Runner.ts"
 
 export const verdictSchema = "cook.verdict/1"
 
@@ -22,6 +29,11 @@ const Timing = Schema.Struct({
   runner_start_ms: Schema.NullOr(Schema.Number),
   /** `cook run` invoked to the request reaching the daemon. Null when the client did not say. */
   client_ms: Schema.NullOr(Schema.Number),
+  /**
+   * Wall time of the rerun of the failed tests with tracing on; null when there was none. It is
+   * inside `duration_ms`, and in neither `overhead_ms` nor `tests_ms`.
+   */
+  diagnostic_rerun_ms: Schema.optionalKey(Schema.NullOr(Schema.Number)),
 })
 
 export const Failure = Schema.Struct({
@@ -35,7 +47,11 @@ export const Failure = Schema.Struct({
   /** The source line of the failing call. */
   step: Schema.NullOr(Schema.String),
   message: Schema.String,
-  /** Playwright trace zip, when the project's own config kept one. */
+  /**
+   * Playwright trace zip: from the deciding run when the project's own config kept one (trace
+   * policy `project`), else from the diagnostic rerun. When `diagnostic_rerun` is `passed` it is
+   * the trace of that passing rerun, not of the failure.
+   */
   trace: Schema.NullOr(Schema.String),
   /** Console errors and uncaught page errors read from the trace; null when there is no trace. */
   console_errors: Schema.NullOr(Schema.Array(Schema.String)),
@@ -44,6 +60,11 @@ export const Failure = Schema.Struct({
   server_logs: Schema.Array(Schema.String),
   repro: Schema.String,
   duration_ms: Schema.Number,
+  /**
+   * What the rerun with tracing on said about this test. It never changes the verdict: `passed`
+   * means "failed, then passed when run again", which is what a flake looks like.
+   */
+  diagnostic_rerun: Schema.optionalKey(Schema.Literals(["passed", "failed", "not_run"])),
 })
 export type Failure = typeof Failure.Type
 
@@ -72,6 +93,21 @@ export const Verdict = Schema.Struct({
   failures: Schema.Array(Failure),
   quarantined: Schema.Array(Schema.String),
   error: Schema.NullOr(VerdictError),
+  /** The trace policy the run used. */
+  trace: Schema.optionalKey(Schema.Literals(tracePolicies)),
+  scheduling: Schema.optionalKey(
+    Schema.Struct({
+      /** What was asked for. */
+      order: Schema.Literals(orderPolicies),
+      /** Whether the slowest-first order was in effect for this run. */
+      applied: Schema.Boolean,
+      /** Why not, when it was not. */
+      reason: Schema.NullOr(Schema.String),
+      /** Selected tests with a recorded duration, and without one (those are queued as if slowest). */
+      estimated: Schema.Number,
+      unknown: Schema.Number,
+    }),
+  ),
   /** Playwright has no run seed. Always null; kept for the shape of the Elixir engine's verdict. */
   seed: Schema.Null,
 })
@@ -111,6 +147,31 @@ export interface VerdictInput {
   readonly error?: { readonly reason: string; readonly message: string } | null
   /** `cook run <path>` with the options needed to run in the same way. */
   readonly reproPrefix: string
+  readonly tracePolicy?: TracePolicy
+  readonly orderPolicy?: OrderPolicy
+  /** What the ordering hook reported; null or absent when it did not run. */
+  readonly order?: OrderOutcome | null
+  /** The diagnostic rerun: its wall time and what it said per failed test id. Null: none was made. */
+  readonly rerun?: { readonly ms: number; readonly outcomes: ReadonlyMap<string, RerunOutcome> } | null
+}
+
+const schedulingOf = (input: VerdictInput): NonNullable<Verdict["scheduling"]> => {
+  const order = input.orderPolicy ?? "project"
+  const outcome = input.order ?? null
+  return {
+    order,
+    applied: outcome?.applied ?? false,
+    reason:
+      order === "project"
+        ? null
+        : outcome === null
+          ? input.timings === null
+            ? "the runner did not run"
+            : "no recorded durations for this project yet, or this Playwright version has no preprocess hook"
+          : outcome.reason,
+    estimated: outcome?.estimated ?? 0,
+    unknown: outcome?.unknown ?? 0,
+  }
 }
 
 export const capMessage = (capMs: number, detail: string | null): string =>
@@ -132,6 +193,7 @@ const failureOf = (row: TestRow, input: VerdictInput): Failure => {
     server_logs: [],
     repro: `${input.reproPrefix} ${row.file}:${row.line}`,
     duration_ms: row.durationMs,
+    diagnostic_rerun: input.rerun?.outcomes.get(row.testId) ?? "not_run",
   }
 }
 
@@ -180,6 +242,7 @@ export const buildVerdict = (input: VerdictInput): Verdict => {
     timings !== null && timings.spawnToEndMs !== null && timings.spawnToFirstTestMs !== null
       ? timings.spawnToEndMs - timings.spawnToFirstTestMs
       : 0
+  const rerunMs = input.rerun?.ms ?? 0
   // A run that ended in an error has no trustworthy failures: they are not reported.
   const failures = error === null ? failed.map((row) => failureOf(row, input)) : []
   return {
@@ -189,7 +252,7 @@ export const buildVerdict = (input: VerdictInput): Verdict => {
     path: input.path,
     duration_ms: input.durationMs,
     timing: {
-      overhead_ms: Math.max(0, input.durationMs - testSpan),
+      overhead_ms: Math.max(0, input.durationMs - testSpan - rerunMs),
       tests_ms: ran.reduce((sum, row) => sum + row.durationMs, 0),
       slowest_test_ms: ran.reduce((max, row) => Math.max(max, row.durationMs), 0),
       first_test_ms:
@@ -201,6 +264,7 @@ export const buildVerdict = (input: VerdictInput): Verdict => {
       load_ms: timings?.spawnToBeginMs ?? null,
       runner_start_ms: timings?.spawnToFirstTestMs ?? null,
       client_ms: input.clientMs,
+      diagnostic_rerun_ms: input.rerun != null ? input.rerun.ms : null,
     },
     selected,
     skipped: known !== null ? Math.max(0, known - selected) : 0,
@@ -214,6 +278,8 @@ export const buildVerdict = (input: VerdictInput): Verdict => {
     failures,
     quarantined: [],
     error,
+    trace: input.tracePolicy ?? "project",
+    scheduling: schedulingOf(input),
     seed: null,
   }
 }
@@ -243,6 +309,9 @@ export const summary = (verdict: Verdict): string => {
     `slowest test ${seconds(timing.slowest_test_ms)}`,
     ...(counts.skipped > 0 ? [`${counts.skipped} skipped by the test files`] : []),
     ...(verdict.skipped > 0 ? [`${verdict.skipped} not selected`] : []),
+    ...(timing.diagnostic_rerun_ms != null
+      ? [`rerun for traces ${seconds(timing.diagnostic_rerun_ms)}`]
+      : []),
   ]
   const lines = [`${head} (${notes.join(", ")})`]
   for (const failure of verdict.failures) {
@@ -252,7 +321,14 @@ export const summary = (verdict: Verdict): string => {
     )
     lines.push(indent(failure.message, "    "))
     if (failure.step !== null) lines.push(`    at: ${failure.step}`)
-    if (failure.trace !== null) lines.push(`    trace: ${failure.trace}`)
+    if (failure.diagnostic_rerun === "passed") {
+      lines.push("    rerun: passed when run again with tracing on (the verdict stays failed)")
+    } else if (failure.diagnostic_rerun === "failed") lines.push("    rerun: failed again with tracing on")
+    if (failure.trace !== null) {
+      lines.push(
+        `    trace${failure.diagnostic_rerun === "passed" ? " (of the passing rerun)" : ""}: ${failure.trace}`,
+      )
+    }
     if (failure.dom_snapshot !== null) lines.push(`    page: ${failure.dom_snapshot}`)
     for (const line of failure.console_errors ?? []) lines.push(`    console: ${line}`)
     lines.push(`    repro: ${failure.repro}`)

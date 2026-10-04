@@ -104,3 +104,27 @@ test("a file database is migrated once and can be reopened; a duplicate run id s
     rmSync(dir, { recursive: true, force: true })
   }
 })
+
+test("recent durations: the median of each test's last five finished results, error runs left out", () => {
+  const store = openStore(":memory:")
+  const at = (n: number) => new Date(Date.UTC(2026, 9, 4, 12, 0, n))
+  // Oldest first: 9000 is the sixth-newest result of "slow" and falls out of the window.
+  ;[9000, 400, 500, 4000, 450, 480].forEach((ms, i) => {
+    store.record(
+      verdictOf(`r${i}`, [row("slow", "passed", ms), row("quick", "failed", 10 + i)]),
+      [row("slow", "passed", ms), row("quick", "failed", 10 + i), row("never ran", "skipped", 0)],
+      at(i),
+    )
+  })
+  const errored = { ...verdictOf("err", [row("slow", "passed", 1)]), status: "error" as const }
+  store.record(errored, [row("slow", "interrupted", 1), row("quick", "passed", 99999)], at(10))
+  const durations = store.recentDurations("/work/app")
+  expect([...durations].sort()).toEqual([
+    // Only ever skipped: known, with what the skip took, instead of new on every run.
+    ["a.spec.ts › never ran", 0],
+    ["a.spec.ts › quick", 13],
+    ["a.spec.ts › slow", 480],
+  ])
+  expect(store.recentDurations("/work/app", 1).get("a.spec.ts › slow")).toBe(480)
+  expect(store.recentDurations("/elsewhere").size).toBe(0)
+})

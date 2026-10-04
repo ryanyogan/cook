@@ -4,6 +4,18 @@ import { join, resolve } from "node:path"
 import { Cause, Context, Duration, Effect, Layer, Option, Semaphore } from "effect"
 import { BrowserServer } from "./BrowserServer.ts"
 import { classify, describeDeath, type ServerIdentity, type ServerSnapshot, staleReady } from "./Classify.ts"
+import {
+  defaultOrderPolicy,
+  defaultRerunLimit,
+  defaultTracePolicy,
+  firstRunTrace,
+  mergeArtifacts,
+  type OrderPolicy,
+  type RerunOutcome,
+  rerunOutcomes,
+  rerunSelection,
+  type TracePolicy,
+} from "./Diagnostic.ts"
 import type { CookError } from "./errors.ts"
 import { tcpAccepts } from "./os.ts"
 import { type ProjectSpec, resolveProject } from "./Project.ts"
@@ -25,10 +37,15 @@ export interface RunRequest {
   readonly config?: string
   /** Epoch milliseconds at which the client was invoked, for `timing.client_ms`. */
   readonly clientStartedMs?: number
+  /** Default `on-failure-rerun`: tracing off, failed tests rerun once with tracing on. */
+  readonly trace?: TracePolicy
+  /** Default `longest-first`, from the durations in the store. */
+  readonly order?: OrderPolicy
 }
 
 /** What the coordinator needs from a finished run. */
-export type RanSuite = Pick<RunResult, "runId" | "runDir" | "exitCode" | "report" | "timings" | "pool">
+export type RanSuite = Pick<RunResult, "runId" | "runDir" | "exitCode" | "report" | "timings" | "pool"> &
+  Partial<Pick<RunResult, "order">>
 
 export interface CoordinatorDeps {
   readonly run: (spec: ProjectSpec, options: RunOptions) => Effect.Effect<RanSuite, CookError>
@@ -36,7 +53,13 @@ export interface CoordinatorDeps {
   readonly snapshot: (spec: ProjectSpec) => Effect.Effect<ReadonlyArray<ServerSnapshot>>
   readonly store: Store
   /** Gathers what Playwright kept for the failed tests into the run directory. */
-  readonly collect?: (failed: ReadonlyArray<TestRow>, runDir: string) => ReadonlyMap<string, Artifacts>
+  readonly collect?: (
+    failed: ReadonlyArray<TestRow>,
+    runDir: string,
+    label?: string,
+  ) => ReadonlyMap<string, Artifacts>
+  /** At most this many failed tests are rerun for their traces. Default 20. */
+  readonly rerunLimit?: number
   /** A run longer than this is abandoned with an `error` verdict. Default 15 minutes. */
   readonly runTimeoutMs?: number
   /** How long a run waits for the pool to notice a dead server before it starts anyway. */
@@ -92,6 +115,7 @@ export const identities = (pool: RanSuite["pool"]): ReadonlyArray<ServerIdentity
 export const collectArtifacts = (
   failed: ReadonlyArray<TestRow>,
   runDir: string,
+  label = "",
 ): ReadonlyMap<string, Artifacts> => {
   const found = new Map<string, Artifacts>()
   const dir = join(runDir, "artifacts")
@@ -108,11 +132,11 @@ export const collectArtifacts = (
     }
   }
   failed.forEach((row, index) => {
-    const trace = keep(row.tracePath, `${index + 1}-trace.zip`)
+    const trace = keep(row.tracePath, `${index + 1}-${label}trace.zip`)
     found.set(row.testId, {
       trace,
       consoleErrors: trace !== null ? consoleErrorsFromTrace(trace) : null,
-      domSnapshot: keep(row.errorContextPath, `${index + 1}-error-context.md`),
+      domSnapshot: keep(row.errorContextPath, `${index + 1}-${label}error-context.md`),
     })
   })
   return found
@@ -164,6 +188,7 @@ export const makeCoordinator = (deps: CoordinatorDeps): CoordinatorApi => {
   const collect = deps.collect ?? (() => new Map<string, Artifacts>())
   const runTimeout = Duration.millis(deps.runTimeoutMs ?? 15 * 60_000)
   const settleTimeoutMs = deps.settleTimeoutMs ?? 5000
+  const rerunLimit = deps.rerunLimit ?? defaultRerunLimit
 
   /**
    * A server that died a moment ago can still be listed as ready, because its exit has not been
@@ -183,10 +208,18 @@ export const makeCoordinator = (deps: CoordinatorDeps): CoordinatorApi => {
       const queueMs = Date.now() - receivedAt
       const capMs = request.timeoutMs ?? defaultTestTimeoutMs
       const files = request.files ?? []
-      const options: RunOptions = {
-        files,
+      const tracePolicy = request.trace ?? defaultTracePolicy
+      const orderPolicy = request.order ?? defaultOrderPolicy
+      const trace = firstRunTrace(tracePolicy)
+      const common: RunOptions = {
         testTimeoutMs: capMs,
         ...(request.workers !== undefined ? { workers: request.workers } : {}),
+      }
+      const options: RunOptions = {
+        ...common,
+        files,
+        ...(trace !== undefined ? { trace } : {}),
+        ...(orderPolicy === "longest-first" ? { durations: deps.store.recentDurations(path) } : {}),
       }
       const base = {
         path,
@@ -197,6 +230,8 @@ export const makeCoordinator = (deps: CoordinatorDeps): CoordinatorApi => {
           request.clientStartedMs !== undefined ? Math.round(receivedAt - request.clientStartedMs) : null,
         known: deps.store.knownTests(path),
         reproPrefix: reproPrefix(path, request),
+        tracePolicy,
+        orderPolicy,
       }
       yield* settle(spec)
       const outcome = yield* deps.run(spec, options).pipe(Effect.timeoutOption(runTimeout), Effect.result)
@@ -233,7 +268,45 @@ export const makeCoordinator = (deps: CoordinatorDeps): CoordinatorApi => {
         const death = classify(identities(result.pool), after)
         rows = testRows(result.report)
         const failed = rows.filter((row) => row.status !== "passed" && row.status !== "skipped")
-        const artifacts = death === null ? collect(failed, result.runDir) : new Map<string, Artifacts>()
+        let artifacts = death === null ? collect(failed, result.runDir) : new Map<string, Artifacts>()
+        // The verdict is decided by now: `rows` are the result. What follows only gathers detail.
+        const preliminary = buildVerdict({
+          ...base,
+          runId: result.runId,
+          durationMs: 0,
+          timings: result.timings,
+          rows,
+          globalErrors: globalErrors(result.report),
+          runner: { exitCode: result.exitCode, hasReport: result.report !== null, logFile: "" },
+          error: death !== null ? { reason: death.reason, message: describeDeath(death) } : null,
+        })
+        const selection =
+          preliminary.status === "fail" ? rerunSelection(tracePolicy, failed, rerunLimit) : null
+        let rerun: { ms: number; outcomes: ReadonlyMap<string, RerunOutcome> } | null = null
+        if (selection !== null) {
+          const rerunStartedAt = Date.now()
+          // The project's output directory is wiped by this run; the first run's files are copied already.
+          const again = yield* deps
+            .run(spec, { ...common, files: selection.files, extraArgs: selection.extraArgs, trace: "on" })
+            .pipe(Effect.timeoutOption(runTimeout), Effect.result)
+          const againRows =
+            again._tag === "Success" && Option.isSome(again.success)
+              ? testRows(again.success.value.report)
+              : null
+          const wanted = new Set(selection.rows.map((row) => row.testId))
+          const traced = (againRows ?? []).filter((row) => wanted.has(row.testId))
+          // Numbered like the failures, so `2-rerun-trace.zip` belongs to the second failure.
+          const inOrder = failed.map(
+            (row) =>
+              traced.find((t) => t.testId === row.testId) ?? {
+                ...row,
+                tracePath: null,
+                errorContextPath: null,
+              },
+          )
+          artifacts = mergeArtifacts(artifacts, collect(inOrder, result.runDir, "rerun-"))
+          rerun = { ms: Date.now() - rerunStartedAt, outcomes: rerunOutcomes(failed, againRows) }
+        }
         verdict = buildVerdict({
           ...base,
           runId: result.runId,
@@ -241,6 +314,8 @@ export const makeCoordinator = (deps: CoordinatorDeps): CoordinatorApi => {
           timings: result.timings,
           rows,
           artifacts,
+          order: result.order ?? null,
+          rerun,
           globalErrors: globalErrors(result.report),
           runner: {
             exitCode: result.exitCode,
@@ -366,6 +441,9 @@ export class Coordinator extends Context.Service<Coordinator, CoordinatorApi>()(
         snapshot: poolSnapshot(browserServer, webServer),
         store,
         collect: collectArtifacts,
+        ...(process.env.COOK_RERUN_LIMIT !== undefined
+          ? { rerunLimit: Number(process.env.COOK_RERUN_LIMIT) }
+          : {}),
         ...(process.env.COOK_RUN_TIMEOUT_MS !== undefined
           ? { runTimeoutMs: Number(process.env.COOK_RUN_TIMEOUT_MS) }
           : {}),

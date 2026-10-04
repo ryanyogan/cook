@@ -9,11 +9,22 @@ import { WebServer } from "./WebServer.ts"
 export { BrowserServer, type BrowserServerInfo } from "./BrowserServer.ts"
 export { classify, type Death, type ServerIdentity, type ServerSnapshot } from "./Classify.ts"
 export { Coordinator, type CoordinatorApi, makeCoordinator, type RunRequest } from "./Coordinator.ts"
+export {
+  mergeArtifacts,
+  type OrderPolicy,
+  orderPolicies,
+  type RerunOutcome,
+  rerunOutcomes,
+  rerunSelection,
+  type TracePolicy,
+  tracePolicies,
+} from "./Diagnostic.ts"
 export { type CookError, PoolError, ProjectError, RunError } from "./errors.ts"
 export { type Project, type ProjectSpec, resolveProject, type WebServerEntry } from "./Project.ts"
 export { type TestRow, testRows } from "./Report.ts"
 export {
   defaultTestTimeoutMs,
+  type OrderOutcome,
   type PlaywrightReport,
   Runner,
   type RunOptions,
