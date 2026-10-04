@@ -1,0 +1,9 @@
+*
+!fixtures/react_app/package.json
+!fixtures/react_app/package-lock.json
+!fixtures/react_app/tsconfig.json
+!fixtures/react_app/vite.config.ts
+!fixtures/react_app/playwright.config.ts
+!fixtures/react_app/src
+!fixtures/react_app/e2e
+!spike/cloudflare/container/server.mjs
