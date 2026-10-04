@@ -1,0 +1,8 @@
+{
+  "name": "cook-playwright",
+  "private": true,
+  "description": "Playwright server for Cook's warm browser pool. The version must match what playwright_ex supports.",
+  "dependencies": {
+    "playwright": "1.63.0"
+  }
+}

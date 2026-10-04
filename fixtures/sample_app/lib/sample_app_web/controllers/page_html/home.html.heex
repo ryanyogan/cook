@@ -1,0 +1,42 @@
+<Layouts.app flash={@flash} current_scope={@current_scope}>
+  <.header>
+    Welcome to Sample Shop
+    <:subtitle>A small store with a catalog, orders, chat rooms and a support desk.</:subtitle>
+  </.header>
+
+  <p id="auth-state" class="text-sm">
+    <%= if @current_scope do %>
+      Signed in as <strong>{@current_scope.user.email}</strong>
+    <% else %>
+      You are browsing as a guest.
+    <% end %>
+  </p>
+
+  <ul id="home-links" class="grid gap-3 sm:grid-cols-2">
+    <li class="rounded-box border border-base-300 p-4">
+      <a href={~p"/products"} class="font-semibold hover:underline">Browse products</a>
+      <p class="text-sm text-base-content/70">Search the catalog and place an order.</p>
+    </li>
+    <li class="rounded-box border border-base-300 p-4">
+      <a
+        href={~p"/rooms/#{SampleApp.Chat.default_room_slug()}"}
+        class="font-semibold hover:underline"
+      >
+        Join the lobby
+      </a>
+      <p class="text-sm text-base-content/70">Chat live with other shoppers.</p>
+    </li>
+    <li class="rounded-box border border-base-300 p-4">
+      <a href={~p"/support/new"} class="font-semibold hover:underline">Contact support</a>
+      <p class="text-sm text-base-content/70">Open a ticket and we will get back to you.</p>
+    </li>
+    <li :if={!@current_scope} class="rounded-box border border-base-300 p-4">
+      <a href={~p"/users/register"} class="font-semibold hover:underline">Create an account</a>
+      <p class="text-sm text-base-content/70">Needed to order and to post in rooms.</p>
+    </li>
+    <li :if={@current_scope} class="rounded-box border border-base-300 p-4">
+      <a href={~p"/orders"} class="font-semibold hover:underline">Order history</a>
+      <p class="text-sm text-base-content/70">See what you bought and its status.</p>
+    </li>
+  </ul>
+</Layouts.app>

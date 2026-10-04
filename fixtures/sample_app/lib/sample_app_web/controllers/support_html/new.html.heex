@@ -1,0 +1,13 @@
+<Layouts.app flash={@flash} current_scope={@current_scope}>
+  <.header>
+    Contact support
+    <:subtitle>Tell us what went wrong and where we can reach you.</:subtitle>
+  </.header>
+
+  <.form for={@form} id="ticket-form" action={~p"/support"} method="post" novalidate>
+    <.input field={@form[:email]} type="email" label="Your email" />
+    <.input field={@form[:subject]} type="text" label="Subject" />
+    <.input field={@form[:body]} type="textarea" label="How can we help?" rows="5" />
+    <.button variant="primary" id="ticket-submit">Send ticket</.button>
+  </.form>
+</Layouts.app>

@@ -1,0 +1,164 @@
+#!/usr/bin/env bash
+# Cook CLI. `run` and `status` are curl calls to the daemon: no BEAM boots here.
+#
+#   bin/cook start [--detach]             boot the daemon (foreground, or background + wait until ready)
+#   bin/cook stop                         stop a daemon started with `start --detach`
+#   bin/cook run [PATH] [TEST...] [--json]  run tests on the warm pool, print the verdict
+#   bin/cook status [--json]              is the pool ready, what is running, last run
+#
+# PATH is the app directory (default: the daemon's default app). TEST is `file`,
+# `file:line` or a directory, relative to the app root.
+# Exit codes: 0 pass, 1 fail, 2 error (also: daemon unreachable, bad usage).
+#
+# Environment: COOK_URL (default http://127.0.0.1:$COOK_PORT), COOK_PORT (4040),
+# COOK_RUN_TIMEOUT (seconds curl waits for a verdict, default 900),
+# COOK_START_TIMEOUT (seconds `start --detach` waits for readiness, default 180).
+
+set -u
+
+PORT="${COOK_PORT:-4040}"
+URL="${COOK_URL:-http://127.0.0.1:$PORT}"
+
+usage() {
+  sed -n '2,15p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+}
+
+root() {
+  cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd
+}
+
+# Runs curl with the response body on stdout and prints nothing else. The exit
+# code the daemon chose (a response header, written by curl to its stderr) is
+# left in COOK_CODE; it is empty when there was no usable answer.
+request() {
+  { COOK_CODE="$(curl --silent --fail -w '%{stderr}%header{x-cook-exit-code}' "$@" 2>&1 1>&4)"; } 4>&1
+}
+
+unreachable() {
+  echo "cook: no answer from the daemon at $URL (start it with: bin/cook start --detach)" >&2
+  exit 2
+}
+
+cmd_run() {
+  local format=text path="" arg
+  local -a refs=()
+
+  for arg in "$@"; do
+    case "$arg" in
+      --json) format=json ;;
+      -h | --help) usage; exit 0 ;;
+      --*) echo "cook: unknown option $arg" >&2; exit 2 ;;
+      *) refs+=("$arg") ;;
+    esac
+  done
+
+  # The first argument is the app when it is a directory with a mix.exs.
+  if [ "${#refs[@]}" -gt 0 ] && [ -f "${refs[0]}/mix.exs" ]; then
+    path="$(cd "${refs[0]}" && pwd)"
+    refs=("${refs[@]:1}")
+  fi
+
+  local -a args=(--max-time "${COOK_RUN_TIMEOUT:-900}" --data-urlencode "format=$format")
+  [ -n "$path" ] && args+=(--data-urlencode "path=$path")
+  for arg in ${refs[@]+"${refs[@]}"}; do
+    args+=(--data-urlencode "tests[]=$arg")
+  done
+
+  request "${args[@]}" "$URL/api/runs"
+
+  case "$COOK_CODE" in
+    0 | 1 | 2) exit "$COOK_CODE" ;;
+    *) unreachable ;;
+  esac
+}
+
+cmd_status() {
+  local format=text
+  [ "${1:-}" = "--json" ] && format=json
+  request --max-time 10 "$URL/api/status?format=$format"
+
+  case "$COOK_CODE" in
+    0 | 2) exit "$COOK_CODE" ;;
+    *) unreachable ;;
+  esac
+}
+
+ready() {
+  [ "$(curl --silent --max-time 2 -o /dev/null -w '%header{x-cook-exit-code}' "$URL/api/status" 2>/dev/null)" = "0" ]
+}
+
+cmd_start() {
+  local root
+  root="$(root)"
+  cd "$root" || exit 2
+  export COOK_DAEMON=1 PORT
+
+  (cd priv/playwright && [ -d node_modules/playwright ]) || {
+    echo "cook: installing Playwright for the browser server" >&2
+    (cd priv/playwright && PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm install --silent) || exit 2
+  }
+
+  COOK_POOL=0 mix do ecto.create --quiet + ecto.migrate --quiet || exit 2
+
+  if [ "${1:-}" != "--detach" ]; then
+    exec mix phx.server
+  fi
+
+  mkdir -p tmp
+  rm -f tmp/cook.pid
+  COOK_PIDFILE="$root/tmp/cook.pid" nohup mix phx.server >tmp/cook.log 2>&1 </dev/null &
+
+  local deadline=$((SECONDS + ${COOK_START_TIMEOUT:-180}))
+  until ready; do
+    if [ "$SECONDS" -ge "$deadline" ]; then
+      echo "cook: the daemon did not become ready; see $root/tmp/cook.log" >&2
+      exit 2
+    fi
+    sleep 0.2
+  done
+
+  echo "cook: daemon ready at $URL (pid $(cat tmp/cook.pid 2>/dev/null), log $root/tmp/cook.log)"
+}
+
+cmd_stop() {
+  local root pid
+  root="$(root)"
+  pid="$(cat "$root/tmp/cook.pid" 2>/dev/null)"
+
+  if [ -z "$pid" ] || ! kill -0 "$pid" 2>/dev/null; then
+    echo "cook: no daemon running (no live pid in $root/tmp/cook.pid)" >&2
+    rm -f "$root/tmp/cook.pid"
+    exit 0
+  fi
+
+  kill -TERM "$pid"
+  local deadline=$((SECONDS + 20))
+  while kill -0 "$pid" 2>/dev/null; do
+    if [ "$SECONDS" -ge "$deadline" ]; then
+      echo "cook: daemon $pid did not stop after SIGTERM; sending SIGKILL" >&2
+      kill -KILL "$pid" 2>/dev/null
+      break
+    fi
+    sleep 0.1
+  done
+
+  # The pool's OS processes (browser server, app instance) are killed by their
+  # wrappers when the VM goes away; wait for that so the ports are free again.
+  deadline=$((SECONDS + 10))
+  while pgrep -f "$root/_build/[^ ]*/priv/pool/port_wrapper.sh" >/dev/null; do
+    [ "$SECONDS" -ge "$deadline" ] && { echo "cook: pool processes are still running" >&2; break; }
+    sleep 0.1
+  done
+
+  rm -f "$root/tmp/cook.pid"
+  echo "cook: daemon stopped"
+}
+
+case "${1:-}" in
+  run) shift; cmd_run "$@" ;;
+  status) shift; cmd_status "$@" ;;
+  start) shift; cmd_start "$@" ;;
+  stop) shift; cmd_stop "$@" ;;
+  -h | --help | help) usage ;;
+  *) usage >&2; exit 2 ;;
+esac

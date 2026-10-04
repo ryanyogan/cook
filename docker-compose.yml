@@ -1,0 +1,21 @@
+# Postgres for Cook's own state and for the sample app's test database.
+# Port 5544 keeps it clear of any Postgres already on 5432.
+services:
+  db:
+    image: postgres:18-alpine
+    # Each warm app instance holds a full test pool (2x cores); leave room for several.
+    command: postgres -c max_connections=400
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "127.0.0.1:5544:5432"
+    volumes:
+      - cook_pg:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 1s
+      timeout: 3s
+      retries: 30
+volumes:
+  cook_pg:

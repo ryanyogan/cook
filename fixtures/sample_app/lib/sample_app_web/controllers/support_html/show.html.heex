@@ -1,0 +1,18 @@
+<Layouts.app flash={@flash} current_scope={@current_scope}>
+  <.header>
+    Thanks, we got your ticket
+    <:subtitle>
+      Your reference is <strong id="ticket-reference">{@ticket.reference}</strong>
+    </:subtitle>
+  </.header>
+
+  <.list>
+    <:item title="Subject"><span id="ticket-subject">{@ticket.subject}</span></:item>
+    <:item title="Message"><span id="ticket-body">{@ticket.body}</span></:item>
+    <:item title="We will reply to"><span id="ticket-email">{@ticket.email}</span></:item>
+  </.list>
+
+  <p>
+    <a href={~p"/support/new"} id="new-ticket-link" class="link">Open another ticket</a>
+  </p>
+</Layouts.app>
