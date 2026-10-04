@@ -26,18 +26,35 @@ are `ts-pool`, `ts-runs`, `ts-bench`, with `cloudflare-spike` in parallel. Check
 - The spec `docs/cook-spec.md` is git-ignored and private (never commit it or quote its
   Chromatic section). It predates the direction change and is Phoenix-first.
 
+## Moving machines (owner, 2026-10-04): "push to github and stop on my local we will transfer this work to my server"
+Work on the original workstation was stopped and everything was pushed. To continue on
+another machine, clone the repo and note what does NOT come with it:
+- `docs/cook-spec.md` is git-ignored (private). Copy it by hand if it is wanted; nothing in
+  the TypeScript work depends on it.
+- The assistant's memory files and all scratch directories under `/tmp` stayed behind. This
+  file and the other `.handoff/*.md` are the whole shared memory.
+- Needs: Node 24 with npm; `npm ci` in `packages/cook` and in `fixtures/react_app`; Chromium
+  for Playwright 1.63.0 (`npx playwright install chromium` in the fixture). Docker and
+  Postgres are needed only for the frozen Elixir engine, Erlang/Elixir likewise.
+- Cloudflare work needs `wrangler login` on that machine (containers scope).
+- Timings in the handoff files were measured on a 24-core workstation; re-measure the
+  baselines on the new machine before comparing anything.
+- The ports listed as reserved in the briefs (4002, 4040, 4041, 4310) were about this
+  workstation's running processes; on a fresh machine only the defaults matter.
+
 ## Progress and plan (updated 2026-10-04, evening)
-- Done and pushed (`main` at `3b54a72`, CI green incl. the new `engine` job): `ts-pool`,
-  `ts-runs`, `cloudflare-spike`, `speed-profile`.
+- Done and pushed (CI green incl. the `engine` job): `ts-pool`, `ts-runs`,
+  `cloudflare-spike`, `speed-profile`, `ts-order` (6.69 s p50 on the dev server, from 10.65 s).
+- `ts-build-mode` was interrupted by the move: read `.handoff/ts-build-mode.md` for exactly
+  how far it got before continuing it.
 - Key finding (`speed-profile.md`): warmth alone saves nothing on the fixture (about 11 s).
   Production build + slow tests first + tracing off + 8 workers gives 4.5 s; the floor
   (three slow tests) is 4.3 s.
 - Cloudflare (`cloudflare-spike.md`): works in one 4 vCPU container, about 30 s warm for the
   full suite with 4 workers (workstation at 4 workers: about 15 s). PID 1 must handle SIGTERM.
 - Remaining stages, in order, one agent at a time so timings are clean:
-  1. `ts-order`: longest-first from stored durations; tracing off with a diagnostic rerun
-     of failures. (Started; check for `.handoff/ts-order.md`.)
-  2. `ts-build-mode`: optional per-project config giving build and serve commands, so Cook
+  1. `ts-order`: done.
+  2. `ts-build-mode` (interrupted, see above): optional per-project config giving build and serve commands, so Cook
      keeps a production build warm and rebuilds when sources change. Measure the build cost.
   3. `fixture-flakes`: `e2e/activity.spec.ts:22` and `e2e/reports.spec.ts:13` fail
      sometimes under machine load; find the cause.
